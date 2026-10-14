@@ -1,4 +1,4 @@
-const CACHE = 'mamba-v3';
+const CACHE = 'mamba-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/data.js',
   './js/storage.js',
   './js/ics.js',
+  './js/prayertimes.js',
   './js/core.js',
   './js/calendar.js',
   './js/tabs-study.js',

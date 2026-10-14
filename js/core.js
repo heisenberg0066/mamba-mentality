@@ -39,6 +39,14 @@ function applyLang() {
   document.title = t('appName');
 }
 
+/* prayers (calculated daily, Stockholm) */
+const _prayerCache = {};
+function prayersFor(ds) {
+  const key = ds + JSON.stringify(MM.state.settings.prayer);
+  if (!_prayerCache[key]) _prayerCache[key] = mmPrayerList(ds, MM.state.settings.prayer);
+  return _prayerCache[key];
+}
+
 /* pacing */
 function chapters() { return MM.state.swedishChapters; }
 function nextSwedishChapter() { return chapters().find((c) => !c.done) || null; }

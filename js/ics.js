@@ -74,6 +74,11 @@ function mmBuildIcs(events, opts) {
     if (ev.url) lines.push('URL:' + ev.url.replace(/[\r\n]/g, ''));
     if (ev.category) lines.push('CATEGORIES:' + icsEscape(ev.category));
     lines.push('TRANSP:' + (ev.transparent ? 'TRANSPARENT' : 'OPAQUE'));
+    if (ev.alarmMin != null && ev.alarmMin >= 0) {
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY',
+        'TRIGGER:' + (ev.alarmMin > 0 ? '-PT' + ev.alarmMin + 'M' : 'PT0M'),
+        'DESCRIPTION:' + icsEscape(ev.alarmText || ev.title), 'END:VALARM');
+    }
     lines.push('END:VEVENT');
   });
   lines.push('END:VCALENDAR');

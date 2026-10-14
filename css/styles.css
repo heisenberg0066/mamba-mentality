@@ -418,3 +418,10 @@ nav.tabs button{font-size:9.5px}
 .swatches{display:flex;gap:12px}
 .swatch{width:44px;height:44px;border-radius:50%;border:2px solid transparent;background:var(--n);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4)}
 .swatch.sel{border-color:var(--gold);transform:scale(1.1)}
+
+/* v4: prayer settings */
+.prayer-today{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center;margin-bottom:6px}
+.prayer-today div{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 2px;display:flex;flex-direction:column;gap:2px}
+.prayer-today b{font-variant-numeric:tabular-nums;color:#cfe3ff}
+.offsets{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.offsets input{padding:8px 4px;text-align:center}

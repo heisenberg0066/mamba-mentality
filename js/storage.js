@@ -42,6 +42,10 @@ function mmSeedCourse(c) {
   };
 }
 
+function mmDefaultPrayer() {
+  return { method: 'MWL', asr: 'standard', highLat: 'AngleBased', offsets: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 } };
+}
+
 function mmDefaultState() {
   const courses = MM_SEED.courses.map(mmSeedCourse);
   mmAutoDeadlines(courses, 4, '2026-10-19');
@@ -50,7 +54,8 @@ function mmDefaultState() {
     settings: {
       lang: 'en', jobMode: 'none', restDay: 'sunday', restMovedTo: null, gotJob: false,
       solidWorksStart: MM_SEED.solidWorksStart, morningRecapDismissedDate: null,
-      activeCourse: null, calView: 'day'
+      activeCourse: null, calView: 'day',
+      prayer: mmDefaultPrayer()
     },
     template: {},       // { '0'..'6', 'rest': [blocks] } — only when customised
     days: {},           // { 'YYYY-MM-DD': [blocks] } — per-day overrides
@@ -80,6 +85,8 @@ function mmMigrate(parsed) {
   if (!parsed || typeof parsed !== 'object') return base;
   const s = { ...base, ...parsed };
   s.settings = { ...base.settings, ...(parsed.settings || {}) };
+  const pp = (parsed.settings && parsed.settings.prayer) || {};
+  s.settings.prayer = { ...mmDefaultPrayer(), ...pp, offsets: { ...mmDefaultPrayer().offsets, ...(pp.offsets || {}) } };
   s.money = { ...base.money, ...(parsed.money || {}) };
   s.money.months = s.money.months || {};
   s.sunday = { ...base.sunday, ...(parsed.sunday || {}), checklist: { ...base.sunday.checklist, ...((parsed.sunday || {}).checklist || {}) } };

@@ -117,3 +117,20 @@ Object.assign(MM_I18N.ar, { tabNotes: 'ملاحظات', notesTitle: 'الملا�
 Object.assign(MM_I18N.sv, { tabNotes: 'Anteckn.', notesTitle: 'Anteckningar', notePlaceholder: 'Skriv en anteckning…', noteAdd: 'Lägg till', notesEmpty: 'Inga anteckningar än — sätt upp den första!',
   noteEdit: 'Redigera anteckning', noteColor: 'Färg', notePin: 'Fäst överst', noteUnpin: 'Lossa', noteCreated: 'Skapad',
   color_yellow: 'Gul', color_mint: 'Mint', color_peach: 'Persika', color_lavender: 'Lavendel', color_sky: 'Himmelsblå' });
+
+/* v4: alerts + prayer calculation */
+Object.assign(MM_I18N.en, { icsAlert: 'Alert for blocks', icsPrayerAlert: 'Alert for prayers', minBefore: 'min before', atStart: 'At start time', atTime: 'At prayer time', noAlert: 'No alert',
+  icsIncludePrayers: 'Include prayer times',
+  prayerSettings: 'Prayer times', prayerMethod: 'Calculation method', prayerAsrMethod: 'Asr juristic method', asrStandard: 'Standard (Shafi, Maliki, Hanbali)', asrHanafi: 'Hanafi',
+  prayerHighLat: 'High-latitude rule', hl_AngleBased: 'Angle-based (recommended)', hl_OneSeventh: 'One-seventh of the night', hl_NightMiddle: 'Middle of the night', hl_None: 'None',
+  prayerOffsets: 'Manual adjustments (minutes)' });
+Object.assign(MM_I18N.ar, { icsAlert: 'تنبيه للكتل', icsPrayerAlert: 'تنبيه للصلوات', minBefore: 'دقائق قبل', atStart: 'عند البداية', atTime: 'عند وقت الصلاة', noAlert: 'بدون تنبيه',
+  icsIncludePrayers: 'تضمين أوقات الصلاة',
+  prayerSettings: 'أوقات الصلاة', prayerMethod: 'طريقة الحساب', prayerAsrMethod: 'مذهب العصر', asrStandard: 'الجمهور (شافعي، مالكي، حنبلي)', asrHanafi: 'حنفي',
+  prayerHighLat: 'قاعدة خطوط العرض العليا', hl_AngleBased: 'حسب الزاوية (موصى به)', hl_OneSeventh: 'سُبع الليل', hl_NightMiddle: 'منتصف الليل', hl_None: 'بدون',
+  prayerOffsets: 'تعديلات يدوية (دقائق)' });
+Object.assign(MM_I18N.sv, { icsAlert: 'Påminnelse för block', icsPrayerAlert: 'Påminnelse för böner', minBefore: 'min före', atStart: 'Vid start', atTime: 'Vid bönetiden', noAlert: 'Ingen påminnelse',
+  icsIncludePrayers: 'Ta med bönetider',
+  prayerSettings: 'Bönetider', prayerMethod: 'Beräkningsmetod', prayerAsrMethod: 'Asr-metod', asrStandard: 'Standard (Shafi, Maliki, Hanbali)', asrHanafi: 'Hanafi',
+  prayerHighLat: 'Regel för höga breddgrader', hl_AngleBased: 'Vinkelbaserad (rekommenderas)', hl_OneSeventh: 'En sjundedel av natten', hl_NightMiddle: 'Mitt i natten', hl_None: 'Ingen',
+  prayerOffsets: 'Manuella justeringar (minuter)' });

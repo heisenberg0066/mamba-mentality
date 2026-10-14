@@ -67,8 +67,8 @@ function hourLabels(px) {
   for (let i = 0; i <= 24; i++) h += `<div class="hr" style="top:${i * px}px"><span>${String(i % 24).padStart(2, '0')}:00</span></div>`;
   return h;
 }
-function prayerLines(px) {
-  return MM_SEED.prayerDefaults.map((p) => `<div class="prayer-line" style="top:${(toMin(p.time) / 60) * px}px"><span>${esc(t(p.key))} ${p.time}</span></div>`).join('');
+function prayerLines(px, ds) {
+  return prayersFor(ds).map((p) => `<div class="prayer-line" style="top:${(toMin(p.time) / 60) * px}px"><span>${esc(t(p.key))} ${p.time}</span></div>`).join('');
 }
 function nowLine(ds, px, label) {
   if (ds !== mmTodayStr()) return '';
@@ -112,7 +112,7 @@ function renderDayView(ds) {
   return `${weekStrip(ds)}
     <div class="day-head">${esc(longDayName(dow(ds)))} ${Number(ds.slice(8))} ${esc(monthNames()[Number(ds.slice(5, 7)) - 1])}${day.isRest ? ` · <span class="badge">${esc(t('restDay'))}</span>` : ''}</div>
     <div class="cal-scroll" id="cal-scroll"><div class="grid day-grid" style="height:${24 * HOUR}px">
-      ${hourLabels(HOUR)}${prayerLines(HOUR)}
+      ${hourLabels(HOUR)}${prayerLines(HOUR, ds)}
       <div class="ev-layer">${layoutColumns(day.blocks).map((it) => eventHtml(it, HOUR, ds, false)).join('')}</div>
       ${nowLine(ds, HOUR, true)}</div></div>`;
 }
@@ -215,10 +215,10 @@ function collectIcsEvents(from, to, opts) {
       if (b.notes) parts.push(b.notes);
       if (b.subtasks && b.subtasks.length) parts.push(b.subtasks.map((s) => (s.done ? '☑ ' : '☐ ') + s.t).join('\n'));
       if (b.meta && b.meta.rescheduled) parts.push(`${t('rescheduled')} ← ${b.meta.from}`);
-      evs.push({ date: d, start: b.start, end: b.end, id: b.id, title: blockTitle(b) + (detail ? ` — ${detail}` : ''), description: parts.join('\n\n'), url: b.link || '', category: t('type_' + b.type) });
+      evs.push({ date: d, start: b.start, end: b.end, id: b.id, title: blockTitle(b) + (detail ? ` — ${detail}` : ''), description: parts.join('\n\n'), url: b.link || '', category: t('type_' + b.type), alarmMin: opts.alarm, alarmText: blockTitle(b) });
     });
-    if (opts.prayers) MM_SEED.prayerDefaults.forEach((p) => {
-      evs.push({ date: d, start: p.time, end: fromMin(toMin(p.time) + 15), id: 'prayer-' + p.id, title: t(p.key), transparent: true, category: t('prayers') });
+    if (opts.prayers) prayersFor(d).forEach((p) => {
+      evs.push({ date: d, start: p.time, end: fromMin(Math.min(1439, toMin(p.time) + 15)), id: 'prayer-' + p.id, title: '🕌 ' + t(p.key), description: `${t(p.key)} ${p.time} · Stockholm`, transparent: true, category: t('prayers'), alarmMin: opts.prayerAlarm, alarmText: `${t(p.key)} ${p.time}` });
     });
   }
   return evs;
@@ -234,17 +234,20 @@ function openIcsSheet() {
     <label class="field" id="ics-month-f">${esc(t('icsMonth'))}<input type="month" id="ics-month" value="${mk}"></label>
     <label class="field hidden" id="ics-week-f">${esc(t('icsWeek'))}<input type="date" id="ics-week" value="${weekStart(MM.date)}"></label>
     <label class="check-row"><input type="checkbox" id="ics-focus"> ${esc(t('icsFocusOnly'))}</label>
-    <label class="check-row"><input type="checkbox" id="ics-pray"> ${esc(t('icsIncludePrayers'))}</label>
+    <label class="field">${esc(t('icsAlert'))}<select id="ics-alarm">${[0, 5, 10, 15].map((n) => `<option value="${n}" ${n === 5 ? 'selected' : ''}>${n ? n + ' ' + esc(t('minBefore')) : esc(t('atStart'))}</option>`).join('')}<option value="-1">${esc(t('noAlert'))}</option></select></label>
+    <label class="check-row"><input type="checkbox" id="ics-pray" checked> ${esc(t('icsIncludePrayers'))}</label>
+    <label class="field" id="ics-palarm-f">${esc(t('icsPrayerAlert'))}<select id="ics-palarm">${[0, 5, 10, 15].map((n) => `<option value="${n}">${n ? n + ' ' + esc(t('minBefore')) : esc(t('atTime'))}</option>`).join('')}<option value="-1">${esc(t('noAlert'))}</option></select></label>
     <p class="muted small">${esc(t('icsHint'))}</p>
     <button class="btn primary block" id="ics-go">${esc(t('icsGenerate'))}</button></div>`, (root) => {
     let mode = 'month';
+    $('#ics-pray', root).onchange = (e) => { $('#ics-palarm-f', root).classList.toggle('hidden', !e.target.checked); };
     $$('#ics-mode button', root).forEach((b) => { b.onclick = () => {
       mode = b.dataset.m; $$('#ics-mode button', root).forEach((x) => x.classList.toggle('active', x === b));
       $('#ics-month-f', root).classList.toggle('hidden', mode !== 'month'); $('#ics-week-f', root).classList.toggle('hidden', mode !== 'week');
     }; });
     $('#ics-go', root).onclick = async () => {
       const r = icsRange(mode, mode === 'month' ? ($('#ics-month', root).value || mk) : ($('#ics-week', root).value || MM.date));
-      const ics = mmBuildIcs(collectIcsEvents(r.from, r.to, { focusOnly: $('#ics-focus', root).checked, prayers: $('#ics-pray', root).checked }), { calName: 'Mamba Mentality' });
+      const ics = mmBuildIcs(collectIcsEvents(r.from, r.to, { focusOnly: $('#ics-focus', root).checked, prayers: $('#ics-pray', root).checked, alarm: Number($('#ics-alarm', root).value), prayerAlarm: Number($('#ics-palarm', root).value) }), { calName: 'Mamba Mentality' });
       window.__lastIcs = ics;
       try {
         const file = new File([ics], r.name, { type: 'text/calendar' });

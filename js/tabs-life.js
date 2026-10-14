@@ -153,6 +153,17 @@ function renderMore(root) {
       <button class="lb-main" data-tpl-edit="${i}"><span class="time">${b.start}–${b.end}</span><b>${esc(blockTitle(b))}</b></button>
       <div class="lb-move"><button class="btn sm ghost" data-tpl-del="${i}" aria-label="${esc(t('delete'))}">✕</button></div></div>`).join('')}
     <div class="row" style="margin-top:8px"><button class="btn primary" id="tpl-add">＋ ${esc(t('addBlock'))}</button>${custom ? `<button class="btn" id="tpl-reset">${esc(t('resetTemplate'))}</button>` : ''}</div></div>`;
+  const pr = s.prayer; const todayP = prayersFor(mmTodayStr());
+  h += `<div class="card"><h2>🕌 ${esc(t('prayerSettings'))}</h2>
+    <div class="prayer-today">${todayP.map((p) => `<div><span class="muted small">${esc(t(p.key))}</span><b>${p.time}</b></div>`).join('')}</div>
+    <p class="muted small">Stockholm 59.33°N 18.07°E · ${mmTodayStr()}</p>
+    <div class="stack">
+    <label class="field">${esc(t('prayerMethod'))}<select id="pr-method">${Object.entries(MM_PRAYER_METHODS).map(([k, v]) => `<option value="${k}" ${pr.method === k ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>
+    <label class="field">${esc(t('prayerAsrMethod'))}<select id="pr-asr"><option value="standard" ${pr.asr === 'standard' ? 'selected' : ''}>${esc(t('asrStandard'))}</option><option value="hanafi" ${pr.asr === 'hanafi' ? 'selected' : ''}>${esc(t('asrHanafi'))}</option></select></label>
+    <label class="field">${esc(t('prayerHighLat'))}<select id="pr-hl">${['AngleBased', 'OneSeventh', 'NightMiddle', 'None'].map((k) => `<option value="${k}" ${pr.highLat === k ? 'selected' : ''}>${esc(t('hl_' + k))}</option>`).join('')}</select></label>
+    <div class="field-label">${esc(t('prayerOffsets'))}</div>
+    <div class="offsets">${MM_PRAYER_IDS.map((id) => `<label class="field">${esc(t('prayer' + id[0].toUpperCase() + id.slice(1)))}<input type="number" step="1" min="-30" max="30" data-off="${id}" value="${pr.offsets[id] || 0}"></label>`).join('')}</div>
+    </div></div>`;
   h += `<div class="card"><h2>${esc(t('settings'))}</h2><div class="stack">
     <label class="field">${esc(t('language'))}<select id="set-lang"><option value="en" ${s.lang === 'en' ? 'selected' : ''}>English</option><option value="ar" ${s.lang === 'ar' ? 'selected' : ''}>العربية</option><option value="sv" ${s.lang === 'sv' ? 'selected' : ''}>Svenska</option></select></label>
     <label class="field">${esc(t('restDaySetting'))}<select id="set-rest"><option value="saturday" ${s.restDay === 'saturday' ? 'selected' : ''}>${esc(t('saturday'))}</option><option value="sunday" ${s.restDay === 'sunday' ? 'selected' : ''}>${esc(t('sunday'))}</option></select></label>
@@ -162,8 +173,12 @@ function renderMore(root) {
     <button class="btn primary" id="export-btn">${esc(t('exportData'))}</button>
     <label class="btn ghost block" style="cursor:pointer">${esc(t('importData'))}<input type="file" id="import-file" accept="application/json,.json" hidden></label>
     <button class="btn danger" id="reset-day">${esc(t('resetDay'))}</button></div></div>
-    <div class="card"><h3>${esc(t('about'))}</h3><p class="muted">v2 · offline PWA · localStorage</p></div>`;
+    <div class="card"><h3>${esc(t('about'))}</h3><p class="muted">v4 · offline PWA · localStorage</p></div>`;
   root.innerHTML = h;
+  $('#pr-method', root).onchange = (e) => { pr.method = e.target.value; persist(); render(); };
+  $('#pr-asr', root).onchange = (e) => { pr.asr = e.target.value; persist(); render(); };
+  $('#pr-hl', root).onchange = (e) => { pr.highLat = e.target.value; persist(); render(); };
+  $$('[data-off]', root).forEach((i) => { i.onchange = () => { pr.offsets[i.dataset.off] = Math.max(-60, Math.min(60, Number(i.value) || 0)); persist(); render(); }; });
   $$('[data-tpl]', root).forEach((b) => { b.onclick = () => { MM.tplKey = b.dataset.tpl; render(); }; });
   $$('[data-tpl-del]', root).forEach((b) => { b.onclick = () => { if (!custom) MM.state.template[tk] = tpl; MM.state.template[tk].splice(+b.dataset.tplDel, 1); persist(); render(); }; });
   $$('[data-tpl-edit]', root).forEach((b) => { b.onclick = () => openTplBlockSheet(tk, +b.dataset.tplEdit); });
