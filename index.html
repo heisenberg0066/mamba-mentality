@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mamba">
+  <meta name="description" content="Mamba Mentality — personal planner for Ammar (Stockholm)">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <title>Mamba Mentality</title>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="dot">M</span>
+        <span id="brand-name">Mamba Mentality</span>
+      </div>
+      <div class="meta" id="header-meta"></div>
+    </header>
+
+    <main>
+      <div class="panel active" id="panel-today"></div>
+      <div class="panel" id="panel-free"></div>
+      <div class="panel" id="panel-swedish"></div>
+      <div class="panel" id="panel-study"></div>
+      <div class="panel" id="panel-money"></div>
+      <div class="panel" id="panel-goals"></div>
+      <div class="panel" id="panel-notes"></div>
+      <div class="panel" id="panel-more"></div>
+    </main>
+
+    <nav class="tabs" aria-label="Main">
+      <button data-tab="today" class="active"><span class="ico">📅</span><span class="lbl">Calendar</span></button>
+      <button data-tab="free"><span class="ico">⚡</span><span class="lbl">Free</span></button>
+      <button data-tab="swedish"><span class="ico">🇸🇪</span><span class="lbl">Swedish</span></button>
+      <button data-tab="study"><span class="ico">📚</span><span class="lbl">Study</span></button>
+      <button data-tab="money"><span class="ico">💰</span><span class="lbl">Money</span></button>
+      <button data-tab="notes"><span class="ico">🗒️</span><span class="lbl">Notes</span></button>
+      <button data-tab="goals"><span class="ico">🎯</span><span class="lbl">Goals</span></button>
+      <button data-tab="more"><span class="ico">⚙️</span><span class="lbl">More</span></button>
+    </nav>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/i18n-v2.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/ics.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/tabs-study.js"></script>
+  <script src="js/notes.js"></script>
+  <script src="js/tabs-life.js"></script>
+</body>
+</html>
