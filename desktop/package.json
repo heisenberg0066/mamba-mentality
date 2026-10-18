@@ -1,0 +1,55 @@
+{
+  "name": "mamba-mentality",
+  "productName": "Mamba Mentality",
+  "version": "4.0.0",
+  "description": "Mamba Mentality — offline planner (desktop)",
+  "author": "heisenberg0066",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "sync": "node scripts/sync-app.js",
+    "start": "npm run sync && electron .",
+    "dist": "npm run sync && electron-builder --win nsis portable zip --x64"
+  },
+  "build": {
+    "appId": "com.heisenberg0066.mambamentality",
+    "productName": "Mamba Mentality",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "app/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable",
+        "zip"
+      ],
+      "artifactName": "Mamba-Mentality-${version}-win-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mamba Mentality",
+      "artifactName": "Mamba-Mentality-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Mamba-Mentality-Portable-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
+  }
+}

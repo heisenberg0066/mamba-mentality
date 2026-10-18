@@ -251,7 +251,7 @@ function openIcsSheet() {
       window.__lastIcs = ics;
       try {
         const file = new File([ics], r.name, { type: 'text/calendar' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: r.name }); toast(t('icsDone')); return; }
+        if (!/Electron/.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: r.name }); toast(t('icsDone')); return; }
       } catch (e) { /* fall back to download */ }
       mmDownload(r.name, ics, 'text/calendar;charset=utf-8');
       toast(t('icsDone'));
