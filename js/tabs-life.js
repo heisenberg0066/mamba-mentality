@@ -142,7 +142,11 @@ function renderMore(root) {
   const cl = MM.state.sunday.checklist;
   const tk = MM.tplKey || '1'; MM.tplKey = tk;
   const tpl = templateFor(tk); const custom = !!(MM.state.template[tk] && MM.state.template[tk].length);
-  let h = `<div class="card"><h2>${esc(t('sundayReplan'))}</h2><div class="stack">
+  let h = `<div class="card" id="plan-card"><h2>🗓️ ${esc(t('planCard'))}</h2><div class="stack">
+    <label class="field">${esc(t('planStartLabel'))}<input type="date" id="set-planstart" value="${esc(planStartDate())}"></label>
+    <p class="muted small">${esc(t('planStartHint'))}</p>
+    <div class="row"><button class="btn primary" id="plan-add">＋ ${esc(t('addBtn'))}</button><button class="btn" id="plan-items">📋 ${esc(t('myItems'))}</button><button class="btn" id="plan-replan">↻ ${esc(t('replanNow'))}</button></div></div></div>`;
+  h += `<div class="card"><h2>${esc(t('sundayReplan'))}</h2><div class="stack">
     ${[['reviewGoals', 'checkReviewGoals'], ['backup', 'checkBackup'], ['restDay', 'checkRestDay'], ['courses', 'checkCourses'], ['swedish', 'checkSwedish']].map(([k, l]) => `<label class="check-row"><input type="checkbox" data-cl="${k}" ${cl[k] ? 'checked' : ''}> ${esc(t(l))}</label>`).join('')}
     <label class="field">${esc(t('sundayNotes'))}<textarea id="sun-notes">${esc(MM.state.sunday.notes || '')}</textarea></label>
     <button class="btn" id="sun-save">${esc(t('save'))}</button></div></div>`;
@@ -173,7 +177,7 @@ function renderMore(root) {
     <button class="btn primary" id="export-btn">${esc(t('exportData'))}</button>
     <label class="btn ghost block" style="cursor:pointer">${esc(t('importData'))}<input type="file" id="import-file" accept="application/json,.json" hidden></label>
     <button class="btn danger" id="reset-day">${esc(t('resetDay'))}</button></div></div>
-    <div class="card"><h3>${esc(t('about'))}</h3><p class="muted">v4 · offline PWA · localStorage</p></div>`;
+    <div class="card"><h3>${esc(t('about'))}</h3><p class="muted">v${MM_APP_VERSION} · offline PWA · localStorage</p></div>`;
   root.innerHTML = h;
   $('#pr-method', root).onchange = (e) => { pr.method = e.target.value; persist(); render(); };
   $('#pr-asr', root).onchange = (e) => { pr.asr = e.target.value; persist(); render(); };
@@ -191,6 +195,10 @@ function renderMore(root) {
   $('#set-move', root).onchange = (e) => { s.restMovedTo = e.target.value === '' ? null : Number(e.target.value); persist(); };
   $('#set-sw', root).onchange = (e) => { s.solidWorksStart = e.target.value || MM_SEED.solidWorksStart; persist(); };
   $('#ics-btn', root).onclick = () => openIcsSheet();
+  $('#set-planstart', root).onchange = (e) => { const v = e.target.value; if (!v) return; commitPlanChange(() => { MM.state.settings.planStart = v; }); };
+  $('#plan-add', root).onclick = () => openAddChooser(MM.date);
+  $('#plan-items', root).onclick = () => openItemsSheet();
+  $('#plan-replan', root).onclick = () => { restamp(); persist(); toast(t('replanned')); render(); };
   $('#export-btn', root).onclick = () => { mmExport(MM.state); cl.backup = true; persist(); };
   $('#import-file', root).onchange = async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
@@ -247,7 +255,11 @@ function init() {
     if (MM.tab === 'today' && !$('.modal-backdrop')) { const sc = $('#cal-scroll'); const top = sc ? sc.scrollTop : 0; render(); const sc2 = $('#cal-scroll'); if (sc2) sc2.scrollTop = top; }
     else $('#header-meta').innerHTML = `<strong>${mmNowHM()}</strong><br>${mmTodayStr()}`;
   }, 60000);
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e));
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded && !$('.modal-backdrop')) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('./sw.js').then((r) => r.update && r.update()).catch((e) => console.warn('SW', e));
+  }
 }
 window.addEventListener('error', (e) => { document.documentElement.setAttribute('data-js-error', String(e.message)); });
 document.addEventListener('DOMContentLoaded', init);

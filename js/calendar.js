@@ -2,11 +2,13 @@
 function openBlockSheet(ds, blockId, presetStart) {
   const day = getDay(ds);
   const existing = day.blocks.find((b) => b.id === blockId);
+  if (existing && existing.meta && existing.meta.itemId) { openItemSheet(existing.meta.itemId); return; }
   const isNew = !existing;
   const st0 = presetStart || '10:00';
   const b = existing ? clone(existing) : { id: mmUid('b'), type: 'other', start: st0, end: fromMin(toMin(st0) + 60), notes: '', link: '', subtasks: [], meta: {} };
   b.subtasks = b.subtasks || []; b.meta = b.meta || {};
   const resched = !!b.meta.queueId;
+  const auto = !!b.meta.auto;
   const dayLabel = isRestDay(ds) ? t('templateRest') : longDayName(dow(ds));
   const typeOpts = TYPES.map((x) => `<option value="${x}" ${b.type === x ? 'selected' : ''}>${esc(t('type_' + x))}</option>`).join('');
   const html = `<div class="stack">
@@ -16,6 +18,7 @@ function openBlockSheet(ds, blockId, presetStart) {
       <label class="field">${esc(t('start'))}<input type="time" id="bs-start" value="${esc(b.start)}" step="300"></label>
       <label class="field">${esc(t('end'))}<input type="time" id="bs-end" value="${esc(b.end)}" step="300"></label></div>
     <label class="field">${esc(t('type'))}<select id="bs-type">${typeOpts}</select></label>
+    ${auto ? `<div class="auto-note">🤖 ${esc(t('autoMoved'))}${b.meta.movedFrom ? ` · ← ${esc(fmtDay(b.meta.movedFrom))} ${esc(b.meta.movedFromTime || '')}` : ''}</div>` : ''}
     ${b.meta.detail ? `<div class="detail-chip">📌 ${esc(b.meta.detail)}</div>` : ''}
     <label class="field">${esc(t('notes'))}<textarea id="bs-notes">${esc(b.notes || '')}</textarea></label>
     <label class="field">${esc(t('link'))}<input type="url" id="bs-link" value="${esc(b.link || '')}" placeholder="https://"></label>
@@ -24,16 +27,16 @@ function openBlockSheet(ds, blockId, presetStart) {
     ${!isNew ? `<div class="field-label">${esc(t('status'))}</div><div class="row">
       <button class="btn sm success ${b.status === 'done' ? 'on' : ''}" id="bs-done">✓ ${esc(t('markDone'))}</button>
       <button class="btn sm danger ${b.status === 'missed' ? 'on' : ''}" id="bs-missed">↻ ${esc(t('markMissed'))}</button></div>` : ''}
-    ${resched ? '' : `<div class="field-label">${esc(t('scopeLabel'))}</div>
+    ${resched || auto ? '' : `<div class="field-label">${esc(t('scopeLabel'))}</div>
     <div class="seg" id="bs-scope"><button data-scope="day" class="active">${esc(t('scopeDay'))}</button><button data-scope="template">${esc(t('scopeTemplate'))} ${esc(dayLabel)}</button></div>`}
-    <button class="btn primary block" id="bs-save">${esc(t('save'))}</button>
-    ${!isNew ? `<button class="btn danger block" id="bs-del">${esc(t('delete'))}</button>` : ''}</div>`;
+    ${auto ? '' : `<button class="btn primary block" id="bs-save">${esc(t('save'))}</button>`}
+    ${!isNew && !auto ? `<button class="btn danger block" id="bs-del">${esc(t('delete'))}</button>` : ''}</div>`;
   openSheet(isNew ? t('newBlock') : t('editBlock'), html, (root, close) => {
     let scope = 'day';
     const rewire = () => { $('#bs-subs', root).innerHTML = subtaskEditor(b.subtasks); wireSubtasks(root, b.subtasks, rewire); };
     wireSubtasks(root, b.subtasks, rewire);
     $$('#bs-scope button', root).forEach((btn) => { btn.onclick = () => { scope = btn.dataset.scope; $$('#bs-scope button', root).forEach((x) => x.classList.toggle('active', x === btn)); }; });
-    $('#bs-save', root).onclick = () => {
+    if ($('#bs-save', root)) $('#bs-save', root).onclick = () => {
       const title = $('#bs-title', root).value.trim();
       b.type = $('#bs-type', root).value;
       const auto = blockTitle({ type: b.type, labelKey: b.labelKey });
@@ -86,7 +89,10 @@ function calToolbar() {
       <button class="btn sm today-btn" data-today>${esc(t('todayBtn'))}</button>
       <div class="seg cal-seg">${['day', 'week', 'month', 'list'].map((x) => `<button data-view="${x}" class="${MM.view === x ? 'active' : ''}">${esc(t('view' + x[0].toUpperCase() + x.slice(1)))}</button>`).join('')}</div>
       <button class="btn sm" data-ics aria-label="${esc(t('icsExport'))}">📆</button>
-      <button class="btn sm primary add-btn" data-add aria-label="${esc(t('addBlock'))}">＋</button>
+    </div>
+    <div class="row add-row">
+      <button class="btn primary add-main" data-add>＋ ${esc(t('addBtn'))}</button>
+      <button class="btn items-btn" data-items>📋 ${esc(t('myItems'))}${openItemCount() ? ` <span class="badge">${openItemCount()}</span>` : ''}</button>
     </div></div>`;
 }
 function weekStrip(ds) {
@@ -110,7 +116,7 @@ function eventHtml(it, px, ds, compact) {
 function renderDayView(ds) {
   const day = getDay(ds);
   return `${weekStrip(ds)}
-    <div class="day-head">${esc(longDayName(dow(ds)))} ${Number(ds.slice(8))} ${esc(monthNames()[Number(ds.slice(5, 7)) - 1])}${day.isRest ? ` · <span class="badge">${esc(t('restDay'))}</span>` : ''}</div>
+    <div class="day-head">${esc(longDayName(dow(ds)))} ${Number(ds.slice(8))} ${esc(monthNames()[Number(ds.slice(5, 7)) - 1])}${day.isRest ? ` · <span class="badge">${esc(t('restDay'))}</span>` : ''}${day.beforeStart ? ` · <span class="badge">${esc(t('planStartsBadge').replace('{x}', fmtDay(planStartDate())))}</span>` : ''}</div>
     <div class="cal-scroll" id="cal-scroll"><div class="grid day-grid" style="height:${24 * HOUR}px">
       ${hourLabels(HOUR)}${prayerLines(HOUR, ds)}
       <div class="ev-layer">${layoutColumns(day.blocks).map((it) => eventHtml(it, HOUR, ds, false)).join('')}</div>
@@ -153,7 +159,7 @@ function renderListView(ds) {
   return `${weekStrip(ds)}<div class="card">${day.blocks.map((b, i) => `
     <div class="list-block ${b.status ? 'st-' + b.status : ''}"><i class="bar ev-${b.type}"></i>
       <button class="lb-main" data-ev="${esc(b.id)}" data-date="${ds}"><span class="time">${b.start}–${b.end}</span><b>${esc(blockTitle(b))}</b>${b.meta && b.meta.detail ? `<small>${esc(b.meta.detail)}</small>` : ''}</button>
-      ${b.meta && b.meta.queueId ? '' : `<div class="lb-move"><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(t('moveUp'))}">▲</button><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="1" ${i === day.blocks.length - 1 ? 'disabled' : ''} aria-label="${esc(t('moveDown'))}">▼</button></div>`}
+      ${b.meta && (b.meta.queueId || b.meta.itemId || b.meta.auto) ? '' : `<div class="lb-move"><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(t('moveUp'))}">▲</button><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="1" ${i === day.blocks.length - 1 ? 'disabled' : ''} aria-label="${esc(t('moveDown'))}">▼</button></div>`}
       <div class="lb-status"><button class="btn sm success ${b.status === 'done' ? 'on' : ''}" data-quick="done" data-id="${esc(b.id)}">✓</button><button class="btn sm danger ${b.status === 'missed' ? 'on' : ''}" data-quick="missed" data-id="${esc(b.id)}">↻</button></div>
     </div>`).join('')}</div>`;
 }
@@ -168,7 +174,8 @@ function renderToday(root) {
       <div class="muted small">${n} × ${esc(t('type_deep'))}${ch ? ' · 🇸🇪 ' + esc(ch.book + ' ' + ch.num) : ''}${ac ? ' · 📚 ' + esc(ac.code) : ''}${due ? ' · ↻ ' + due : ''}</div></div>`;
   }
   const views = { day: renderDayView, week: renderWeekView, month: renderMonthView, list: renderListView };
-  root.innerHTML = recap + calToolbar() + (views[MM.view] || renderDayView)(MM.date);
+  root.innerHTML = recap + planBanner() + calToolbar() + (views[MM.view] || renderDayView)(MM.date);
+  const pb = $('[data-planwarn]', root); if (pb) pb.onclick = () => openItemsSheet();
   const go = (d) => { MM.date = d; render(); };
   $$('[data-nav]', root).forEach((b) => { b.onclick = () => {
     const n = Number(b.dataset.nav);
@@ -177,7 +184,8 @@ function renderToday(root) {
   }; });
   $$('[data-view]', root).forEach((b) => { b.onclick = () => { MM.view = b.dataset.view; MM.state.settings.calView = MM.view; persist(); render(); }; });
   $('[data-today]', root).onclick = () => go(today);
-  $('[data-add]', root).onclick = () => openBlockSheet(MM.date, null);
+  $('[data-add]', root).onclick = () => openAddChooser(MM.date);
+  $('[data-items]', root).onclick = () => openItemsSheet();
   $('[data-ics]', root).onclick = () => openIcsSheet();
   $$('[data-pick]', root).forEach((b) => { b.onclick = () => go(b.dataset.pick); });
   $$('[data-pickday]', root).forEach((b) => { b.onclick = () => { MM.view = 'day'; go(b.dataset.pickday); }; });
@@ -190,7 +198,7 @@ function renderToday(root) {
   if (grid) grid.addEventListener('click', (e) => {
     if (e.target.closest('.ev')) return;
     const r = grid.getBoundingClientRect();
-    openBlockSheet(MM.date, null, fromMin(Math.floor(((e.clientY - r.top) / HOUR) * 4) * 15));
+    openAddChooser(MM.date, fromMin(Math.floor(((e.clientY - r.top) / HOUR) * 4) * 15));
   });
   const dis = $('[data-action="dismiss-recap"]', root);
   if (dis) dis.onclick = () => { MM.state.settings.morningRecapDismissedDate = today; persist(); render(); };
