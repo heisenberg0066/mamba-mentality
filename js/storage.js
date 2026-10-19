@@ -1,5 +1,6 @@
+const MM_APP_VERSION = '4.1.0';
 const MM_STORAGE_KEY = 'mamba-mentality-v1'; // same key: v2 migrates in place
-const MM_VERSION = 2;
+const MM_VERSION = 3; // v3: planner items (appointments/tasks), plan start date
 
 function mmUid(p) { return (p || 'id') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function mmTodayStr(d) {
@@ -48,15 +49,18 @@ function mmDefaultPrayer() {
 
 function mmDefaultState() {
   const courses = MM_SEED.courses.map(mmSeedCourse);
-  mmAutoDeadlines(courses, 4, '2026-10-19');
+  mmAutoDeadlines(courses, 4, MM_SEED.planStart);
   return {
     version: MM_VERSION,
     settings: {
       lang: 'en', jobMode: 'none', restDay: 'sunday', restMovedTo: null, gotJob: false,
       solidWorksStart: MM_SEED.solidWorksStart, morningRecapDismissedDate: null,
       activeCourse: null, calView: 'day',
-      prayer: mmDefaultPrayer()
+      prayer: mmDefaultPrayer(),
+      planStart: MM_SEED.planStart
     },
+    items: [],          // planner items: { kind:'appt'|'task', ... } — see js/items.js
+    planStamp: null,    // { date, min } — the moment the plan was last recalculated
     template: {},       // { '0'..'6', 'rest': [blocks] } — only when customised
     days: {},           // { 'YYYY-MM-DD': [blocks] } — per-day overrides
     dayStatus: {},
@@ -97,6 +101,11 @@ function mmMigrate(parsed) {
   s.jobApps = parsed.jobApps || {};
   s.goalsMeta = parsed.goalsMeta || {};
   s.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
+  // v3: planner items + plan start date
+  s.items = Array.isArray(parsed.items) ? parsed.items.filter((x) => x && x.id && (x.kind === 'appt' || x.kind === 'task')) : [];
+  s.items.forEach((x) => { if (x.kind === 'task' && !Array.isArray(x.log)) x.log = []; });
+  s.planStamp = parsed.planStamp && parsed.planStamp.date ? parsed.planStamp : null;
+  if (!s.settings.planStart || !/^\d{4}-\d{2}-\d{2}$/.test(s.settings.planStart)) s.settings.planStart = MM_SEED.planStart;
 
   // Swedish: v1 had { id: {done, doneAt} }
   if (!Array.isArray(parsed.swedishChapters)) {
@@ -117,7 +126,7 @@ function mmMigrate(parsed) {
       seeded.topics.forEach((t, i) => { t.done = i < nDone; });
       return seeded;
     });
-    if (!parsed.courses.some((c) => c.deadline)) mmAutoDeadlines(s.courses, 4, '2026-10-19');
+    if (!parsed.courses.some((c) => c.deadline)) mmAutoDeadlines(s.courses, 4, MM_SEED.planStart);
   }
 
   // SolidWorks

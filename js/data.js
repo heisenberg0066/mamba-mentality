@@ -2,6 +2,7 @@
 const MM_SEED = {
   swedishDeadline: '2027-01-15',
   solidWorksStart: '2026-11-01',
+  planStart: '2026-10-21', // default 'plan start date' (Wed 21 Oct 2026) — configurable in More → Plan
   swedishChapters: [
     // Rivstart A1/A2 ch 7–20 (easy ~20 min)
     { id: 'a1-07', book: 'Rivstart A1/A2', num: 7, title: 'Shopping habits, department store', difficulty: 'easy', mins: 20 },

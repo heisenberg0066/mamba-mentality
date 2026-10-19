@@ -1,9 +1,10 @@
 /* Mamba Mentality v2 — core: utils, pacing, schedule model */
-const MM = { state: null, tab: 'today', view: 'day', date: null, toastTimer: null };
+const MM = { state: null, tab: 'today', view: 'day', date: null, toastTimer: null, rev: 0, _plan: null };
 const HOUR = 56;
 const WHOUR = 34;
 const TYPES = ['wake', 'jobs', 'swedish', 'revision', 'solidworks', 'deep', 'meal', 'mealprep', 'buffer', 'chill', 'wind', 'rest', 'other'];
-const FOCUS_TYPES = ['jobs', 'swedish', 'revision', 'solidworks', 'deep', 'mealprep'];
+const FOCUS_TYPES = ['jobs', 'swedish', 'revision', 'solidworks', 'deep', 'mealprep', 'appt', 'task'];
+const ITEM_TYPES = ['appt', 'travel', 'task']; // planner-generated, not selectable in the block editor
 const WORK_TYPES = ['jobs', 'swedish', 'revision', 'solidworks', 'deep', 'mealprep', 'other'];
 const PACE_BY_MODE = { none: 4, 'part-time': 2.5, 'full-time': 1.5 };
 
@@ -12,7 +13,7 @@ const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-function persist() { mmSave(MM.state); }
+function persist() { MM.rev++; mmSave(MM.state); }
 function toast(msg) {
   let el = $('#toast');
   if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
@@ -83,9 +84,10 @@ function revisionQueue() {
   return list;
 }
 function workDaysBetween(a, b) { let n = 0; for (let d = a; d < b; d = mmAddDays(d, 1)) if (!isRestDay(d)) n++; return n; }
+function planBaseDate() { const ps = planStartDate(); const td = mmTodayStr(); return ps > td ? ps : td; }
 function projectRevision(ds) {
   const queue = revisionQueue(); if (!queue.length) return null;
-  let skip = Math.floor(workDaysBetween(mmTodayStr(), ds) * ((PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6));
+  let skip = Math.floor(workDaysBetween(planBaseDate(), ds) * ((PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6));
   for (const c of queue) {
     const left = c.topics.filter((x) => !x.done);
     if (skip < left.length) return { course: c, topic: left[skip] };
@@ -96,7 +98,7 @@ function projectRevision(ds) {
 function projectSwedish(ds) {
   const left = chapters().filter((c) => !c.done); if (!left.length) return null;
   const perDay = Number(swedishStats().pace) / 6;
-  return left[Math.min(left.length - 1, Math.floor(workDaysBetween(mmTodayStr(), ds) * perDay))];
+  return left[Math.min(left.length - 1, Math.floor(workDaysBetween(planBaseDate(), ds) * perDay))];
 }
 function nextSwItem() { return MM.state.solidworks.items.find((i) => !i.done) || null; }
 function completeTopic(course, topicId) {
@@ -149,37 +151,73 @@ function enrich(b, ds) {
   }
   return b;
 }
-function placeRescheduled(blocks, item) {
-  const dur = Math.max(15, endMin(item.block.end) - toMin(item.block.start));
-  const tryPlace = (ignore) => {
-    const occ = blocks.filter((b) => !ignore.includes(b.type)).map((b) => [toMin(b.start), endMin(b.end)]).sort((a, b) => a[0] - b[0]);
-    let cur = 6 * 60 + 30;
-    for (const [s, e] of occ) { if (s - cur >= dur) return cur; cur = Math.max(cur, e); }
-    return 1440 - cur >= dur ? cur : null;
-  };
-  let st = tryPlace(['buffer']);
-  if (st == null) st = tryPlace(['buffer', 'chill']);
-  if (st == null) st = tryPlace(['buffer', 'chill', 'wind', 'meal']);
-  if (st == null) st = 19 * 60;
-  return { start: fromMin(st), end: fromMin(Math.min(1440, st + dur)) };
+/* ---- planner integration (js/planner.js does the actual fitting) ---- */
+function planStartDate() { return (MM.state.settings && MM.state.settings.planStart) || MM_SEED.planStart; }
+function planItems() { if (!Array.isArray(MM.state.items)) MM.state.items = []; return MM.state.items; }
+function nowMin() { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); }
+function restamp(min) { MM.state.planStamp = { date: mmTodayStr(), min: min == null ? nowMin() : min }; }
+function planStamp() {
+  const st = MM.state.planStamp;
+  if (!st || st.date < mmTodayStr()) { restamp(); mmSave(MM.state); } // first open on a new day: replan from now
+  return MM.state.planStamp;
+}
+function planHorizon() {
+  let to = mmAddDays(planBaseDate(), 21);
+  const bump = (d) => { if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) { const x = mmAddDays(d, 8); if (x > to) to = x; } };
+  planItems().forEach((it) => { bump(it.date); bump(it.deadline); (it.log || []).forEach((l) => bump(l.ds)); });
+  MM.state.missedQueue.forEach((q) => bump(q.rescheduleDate));
+  const cap = mmAddDays(planBaseDate(), 400); return to > cap ? cap : to;
+}
+function planBaseDay(ds) { return { isRest: isRestDay(ds) && !MM.state.days[ds], blocks: baseBlocks(ds).map((b) => enrich(b, ds)) }; }
+function computePlan() {
+  return MMPlanner.buildPlan({
+    planStart: planStartDate(), to: planHorizon(), stamp: planStamp(), baseDay: planBaseDay,
+    prayers: (ds) => prayersFor(ds).map((p) => p.time), items: planItems(), missed: MM.state.missedQueue
+  });
+}
+function currentPlan() {
+  planStamp();
+  const key = MM.rev + '|' + mmTodayStr() + '|' + JSON.stringify(MM.state.planStamp);
+  if (!MM._plan || MM._plan.key !== key) MM._plan = { key, plan: computePlan() };
+  return MM._plan.plan;
+}
+function fixedOnlyDay(ds) { // days before the plan start: only your own appointments / done task chunks
+  const items = planItems().filter((it) => (it.kind === 'appt' && it.date === ds) || (it.kind === 'task' && (it.log || []).some((l) => l.ds === ds))).map((it) => (it.kind === 'task' ? { ...it, done: true } : it));
+  if (!items.length) return { isRest: false, blocks: [] };
+  return MMPlanner.buildPlan({ planStart: ds, to: ds, stamp: { date: ds, min: 0 }, baseDay: () => ({ isRest: false, blocks: [] }), items }).days[ds];
 }
 function getDay(ds) {
-  const rest = isRestDay(ds) && !MM.state.days[ds];
-  const blocks = baseBlocks(ds).map((b) => enrich(b, ds));
+  const ps = planStartDate();
+  let day;
+  if (ds < ps) day = { ...clone(fixedOnlyDay(ds)), beforeStart: true };
+  else {
+    const plan = currentPlan();
+    day = plan.days[ds] ? clone(plan.days[ds]) : planBaseDay(ds);
+  }
   const status = MM.state.dayStatus[ds] || {};
-  blocks.forEach((b) => { b.status = status[b.id] || ''; });
-  MM.state.missedQueue.filter((q) => q.rescheduleDate === ds).forEach((q) => {
-    const slot = placeRescheduled(blocks, q);
-    const b = enrich({ ...clone(q.block), id: 'resched-' + q.id, ...slot }, ds);
-    b.meta.rescheduled = true; b.meta.from = q.originalDate; b.meta.queueId = q.id;
-    b.status = q.status || '';
-    blocks.push(b);
-  });
-  blocks.sort((a, b) => toMin(a.start) - toMin(b.start));
-  return { isRest: rest, blocks };
+  day.blocks.forEach((b) => { b.meta = b.meta || {}; if (b.meta.itemId || b.meta.queueId) b.status = b.status || ''; else b.status = status[b.id] || ''; });
+  day.blocks.sort((a, b) => toMin(a.start) - toMin(b.start));
+  return day;
+}
+function planWarnings() {
+  const today = mmTodayStr();
+  return currentPlan().warnings.filter((w) => w.t === 'overflow' || ((w.ds || '') >= today));
+}
+function itemBlockStatus(ds, b, status) {
+  const it = planItems().find((x) => x.id === b.meta.itemId); if (!it) return;
+  if (it.kind === 'appt') { if (status === 'done') it.done = !it.done; else { toast(t('apptNoMiss')); return; } }
+  else if (b.meta.doneChunk != null) { if (status === 'done') { it.log.splice(b.meta.doneChunk, 1); it.done = false; it.doneAt = null; } }
+  else if (status === 'done') {
+    it.log = it.log || []; it.log.push({ ds, start: b.start, end: b.end });
+    if (MMPlanner.taskRemaining(it) <= 0) { it.done = true; it.doneAt = mmTodayStr(); }
+  } else if (status === 'missed') {
+    restamp(ds === mmTodayStr() ? Math.max(nowMin(), endMin(b.end)) : null); toast(t('replanned'));
+  }
+  persist();
 }
 function findNextFreeDate(fromDs) {
-  let d = fromDs;
+  const ps0 = mmAddDays(planStartDate(), -1);
+  let d = fromDs < ps0 ? ps0 : fromDs;
   for (let i = 0; i < 28; i++) {
     d = mmAddDays(d, 1);
     if (isRestDay(d)) continue;
@@ -188,6 +226,7 @@ function findNextFreeDate(fromDs) {
   return mmAddDays(fromDs, 1);
 }
 function setStatus(ds, b, status) {
+  if (b.meta && b.meta.itemId) { itemBlockStatus(ds, b, status); return; }
   if (b.meta && b.meta.queueId) {
     const q = MM.state.missedQueue.find((x) => x.id === b.meta.queueId);
     if (q) {
