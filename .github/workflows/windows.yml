@@ -18,6 +18,8 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: Scheduler tests
+        run: node --test ../tests/planner.test.js
       - run: npm ci
       - run: npm run sync
       - run: npx electron-builder --win nsis portable zip --x64 --publish never

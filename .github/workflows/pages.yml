@@ -18,7 +18,12 @@ jobs:
       url: ${{ steps.d.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: rm -rf desktop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scheduler tests
+        run: node --test tests/planner.test.js
+      - run: rm -rf desktop tests
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
