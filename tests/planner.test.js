@@ -36,7 +36,7 @@ test('migration: old v2 data gets planStart 2026-10-21, empty items, keeps its d
   const old = { version: 2, settings: { lang: 'sv', jobMode: 'part-time', restDay: 'sunday' }, notes: [{ id: 'n1', text: 'hej' }], dayStatus: { '2026-10-15': { jobs: 'done' } }, money: { income: 9000 } };
   app.__old = old;
   const s = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__old)))');
-  assert.strictEqual(s.version, 3);
+  assert.strictEqual(s.version, run(app, 'MM_VERSION'));
   assert.strictEqual(s.settings.planStart, '2026-10-21');
   assert.strictEqual(s.settings.lang, 'sv');
   assert.strictEqual(s.settings.jobMode, 'part-time');

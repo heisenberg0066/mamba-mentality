@@ -1,6 +1,6 @@
-const MM_APP_VERSION = '4.1.0';
+const MM_APP_VERSION = '4.2.0';
 const MM_STORAGE_KEY = 'mamba-mentality-v1'; // same key: v2 migrates in place
-const MM_VERSION = 3; // v3: planner items (appointments/tasks), plan start date
+const MM_VERSION = 4; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
 
 function mmUid(p) { return (p || 'id') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function mmTodayStr(d) {
@@ -21,16 +21,45 @@ function mmIsoWeek(d) {
   return x.getUTCFullYear() + '-W' + String(Math.ceil(((x - y0) / 864e5 + 1) / 7)).padStart(2, '0');
 }
 
-/** Chain default deadlines course after course (topicsPerWeek pace). */
-function mmAutoDeadlines(courses, topicsPerWeek, fromDate) {
-  let cursor = fromDate || mmTodayStr();
-  courses.forEach((c) => {
-    if (c.priority === 'later') { return; }
-    const left = c.topics.filter((t) => !t.done).length;
-    if (!left) return;
-    const weeks = Math.max(1, Math.ceil(left / topicsPerWeek));
-    cursor = mmAddDays(cursor, weeks * 7);
-    c.deadline = cursor;
+const MM_PRIORITIES = ['high', 'quick', 'later', 'ignore']; // high = KEEP; only high + quick are scheduled
+const MM_GROUPS = ['kfupm', 'kth'];
+const MM_PACE = { none: 4, 'part-time': 2.5, 'full-time': 1.5 }; // topics / week (same as PACE_BY_MODE)
+function mmIsScheduled(c) { return !!c && (c.priority === 'high' || c.priority === 'quick'); }
+function mmCodeKey(code) { return String(code || '').toUpperCase().replace(/[\s\-_.]/g, ''); }
+function mmCourseGroup(c) { return MM_GROUPS.includes(c && c.group) ? c.group : 'kfupm'; }
+
+/**
+ * Revision order as a flat list of { course, topic }.
+ * Each group (KFUPM, KTH MSc) is its own stream: active course first, then high, then quick, in list order.
+ * The streams are interleaved 1:1 topic by topic (the active course's group leads), so KTH and KFUPM
+ * revision alternate; when one stream runs out the other simply continues. later / ignore are never scheduled.
+ */
+function mmRevisionSequence(courses, activeCode) {
+  const list = (courses || []).filter((c) => mmIsScheduled(c) && Array.isArray(c.topics) && c.topics.some((x) => !x.done));
+  const act = list.find((c) => c.code === activeCode) || null;
+  const order = [];
+  if (act) order.push(mmCourseGroup(act));
+  list.forEach((c) => { const g = mmCourseGroup(c); if (!order.includes(g)) order.push(g); });
+  const pr = { high: 0, quick: 1 };
+  const streams = order.map((g) => {
+    const cs = list.filter((c) => mmCourseGroup(c) === g)
+      .sort((a, b) => (a === act ? -1 : b === act ? 1 : 0) || pr[a.priority] - pr[b.priority] || list.indexOf(a) - list.indexOf(b));
+    const out = []; cs.forEach((c) => c.topics.forEach((tp) => { if (!tp.done) out.push({ course: c, topic: tp }); }));
+    return out;
+  });
+  const seq = []; const n = Math.max(0, ...streams.map((x) => x.length));
+  for (let i = 0; i < n; i++) streams.forEach((st) => { if (i < st.length) seq.push(st[i]); });
+  return seq;
+}
+
+/** Default deadlines from the interleaved revision order (topicsPerWeek pace). onlyCodes: limit which courses get one. */
+function mmAutoDeadlines(courses, topicsPerWeek, fromDate, activeCode, onlyCodes) {
+  const from = fromDate || mmTodayStr(); const pace = Math.max(0.1, Number(topicsPerWeek) || 4);
+  const lastPos = new Map();
+  mmRevisionSequence(courses, activeCode).forEach((x, i) => lastPos.set(x.course, i + 1));
+  lastPos.forEach((pos, c) => {
+    if (onlyCodes && !onlyCodes.includes(c.code)) return;
+    c.deadline = mmAddDays(from, Math.max(7, Math.ceil((pos / pace) * 7)));
   });
   return courses;
 }
@@ -38,17 +67,20 @@ function mmAutoDeadlines(courses, topicsPerWeek, fromDate) {
 function mmSeedCourse(c) {
   const topics = (MM_TOPICS[c.code] || []).map((n) => ({ id: mmUid('t'), name: n, done: false }));
   return {
-    id: c.code, code: c.code, title: c.title, priority: c.priority,
-    topics, hours: topics.length * 3, deadline: null, notes: '', links: ''
+    id: c.code, code: c.code, title: c.title, priority: c.priority, group: mmCourseGroup(c),
+    topics, hours: topics.length * 3, deadline: null, notes: c.notes || '', links: c.links || '',
+    ...(c.swLink ? { swLink: true } : {})
   };
 }
+
+function mmKthSeedCourses() { return MM_SEED.kthCourses.map((c) => mmSeedCourse({ ...c, group: 'kth' })); }
 
 function mmDefaultPrayer() {
   return { method: 'MWL', asr: 'standard', highLat: 'AngleBased', offsets: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 } };
 }
 
 function mmDefaultState() {
-  const courses = MM_SEED.courses.map(mmSeedCourse);
+  const courses = MM_SEED.courses.map(mmSeedCourse).concat(mmKthSeedCourses());
   mmAutoDeadlines(courses, 4, MM_SEED.planStart);
   return {
     version: MM_VERSION,
@@ -117,8 +149,10 @@ function mmMigrate(parsed) {
   delete s.swedish;
 
   // Courses: v1 had { code, title, priority, progress }
+  const kthKeys = new Set(MM_SEED.kthCourses.map((c) => mmCodeKey(c.code)));
   if (Array.isArray(parsed.courses)) {
-    s.courses = parsed.courses.map((c) => {
+    s.courses = parsed.courses.filter((c) => c && typeof c === 'object').map((c) => {
+      if (!MM_GROUPS.includes(c.group)) c = { ...c, group: kthKeys.has(mmCodeKey(c.code)) ? 'kth' : 'kfupm' };
       if (Array.isArray(c.topics)) return { ...mmSeedCourse(c), ...c };
       const seeded = mmSeedCourse(c);
       const pct = Number(c.progress || 0);
@@ -126,7 +160,19 @@ function mmMigrate(parsed) {
       seeded.topics.forEach((t, i) => { t.done = i < nDone; });
       return seeded;
     });
-    if (!parsed.courses.some((c) => c.deadline)) mmAutoDeadlines(s.courses, 4, MM_SEED.planStart);
+    if (!parsed.courses.some((c) => c && c.deadline)) mmAutoDeadlines(s.courses, 4, MM_SEED.planStart);
+  }
+  // v4: every course has a group + a known priority; the KTH MSc group is added once (existing data untouched)
+  s.courses.forEach((c) => {
+    if (!MM_GROUPS.includes(c.group)) c.group = kthKeys.has(mmCodeKey(c.code)) ? 'kth' : 'kfupm';
+    if (!MM_PRIORITIES.includes(c.priority)) c.priority = 'high';
+  });
+  if (Array.isArray(parsed.courses) && (Number(parsed.version) || 1) < 4) {
+    const have = new Set(s.courses.map((c) => mmCodeKey(c.code)));
+    const added = mmKthSeedCourses().filter((c) => !have.has(mmCodeKey(c.code)));
+    s.courses = s.courses.concat(added);
+    const td = mmTodayStr(); const from = s.settings.planStart > td ? s.settings.planStart : td;
+    mmAutoDeadlines(s.courses, MM_PACE[s.settings.jobMode] || 4, from, s.settings.activeCourse, added.map((c) => c.code));
   }
 
   // SolidWorks
@@ -141,7 +187,16 @@ function mmMigrate(parsed) {
 function mmLoad() {
   try {
     const raw = localStorage.getItem(MM_STORAGE_KEY);
-    return raw ? mmMigrate(JSON.parse(raw)) : mmDefaultState();
+    if (!raw) return mmDefaultState();
+    const parsed = JSON.parse(raw);
+    const v = Number(parsed && parsed.version) || 1;
+    if (v < MM_VERSION) { // keep an untouched copy of the old data before upgrading it
+      const bk = MM_STORAGE_KEY + '-backup-v' + v;
+      try { if (!localStorage.getItem(bk)) localStorage.setItem(bk, raw); } catch (e) { console.warn('backup failed', e); }
+    }
+    const s = mmMigrate(parsed);
+    if (v < MM_VERSION) mmSave(s);
+    return s;
   } catch (e) {
     console.warn('load failed', e);
     return mmDefaultState();

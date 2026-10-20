@@ -83,6 +83,26 @@ const MM_SEED = {
     { code: 'CISE 483', title: 'AI & ML for Robotics', priority: 'later', progress: 0 }
   ],
 
+  // KTH MSc (Solid Mechanics) — separate 'KTH MSc' revision group, interleaved with KFUPM by the scheduler (js/core.js).
+  // priority: high (keep) | quick | later | ignore — editable per course in the Study tab.
+  kthCourses: [
+    { code: 'SE1025', title: 'FEM for Engineering Applications', priority: 'high' },
+    { code: 'SE2132', title: 'Applied Elasticity with FEM', priority: 'high' },
+    { code: 'SE2860', title: 'FEM Modelling', priority: 'high' },
+    { code: 'SE2126', title: 'Material Mechanics', priority: 'high' },
+    { code: 'SE2137', title: 'Fatigue', priority: 'high' },
+    { code: 'SE2139', title: 'Fracture Mechanics', priority: 'high' },
+    { code: 'SD2420', title: 'Advanced Design of Welded Structures', priority: 'high' },
+    { code: 'SD2150', title: 'Experimental Structure Dynamics', priority: 'high', notes: 'Project course — review your own project/report, not a textbook.' },
+    { code: 'MF2019', title: 'CAD 3D-modelling and Visualization', priority: 'high', swLink: true, notes: 'Linked to SolidWorks / CSWP prep (Study tab → SolidWorks CSWP).' },
+    { code: 'SE2123', title: 'Testing Techniques in Solid Mechanics', priority: 'quick' },
+    { code: 'MG2033', title: 'Quality Control', priority: 'quick' },
+    { code: 'SG2211', title: 'Vehicle Aerodynamics', priority: 'quick' },
+    { code: 'SE202X', title: 'Degree Project in Solid Mechanics', priority: 'quick', notes: 'Short refresh of your own thesis only.' },
+    { code: 'AK2030', title: 'Theory and Methodology of Science', priority: 'ignore' },
+    { code: 'SA2002', title: 'Sustainable development and research methodology in engineering mechanics', priority: 'ignore' }
+  ],
+
   // Approximate Stockholm prayer markers (Europe/Stockholm). Updated seasonally in app if needed.
   prayerDefaults: [
     { id: 'fajr', key: 'prayerFajr', time: '05:45' },
@@ -246,7 +266,23 @@ const MM_TOPICS = {
   'AE 449': ['UAS overview & regulations','Aerodynamics basics','Propulsion & power','Sensors & autopilot'],
   'AE 454': ['Mission requirements','Airframe sizing','Avionics integration','Flight testing'],
   'CISE 482': ['Configuration space','Graph search (A*, Dijkstra)','Sampling planners (RRT, PRM)','Localisation & SLAM basics'],
-  'CISE 483': ['ML basics','Neural networks','Perception for robots','Reinforcement learning']
+  'CISE 483': ['ML basics','Neural networks','Perception for robots','Reinforcement learning'],
+  // KTH MSc
+  'SE1025': ['Strong & weak form (1D)','Shape functions & isoparametric elements','Element stiffness & assembly','Boundary conditions & solving','Bars, beams & frames','2D plane stress / strain elements','Heat conduction with FE','Mesh convergence & error checks'],
+  'SE2132': ['Stress, strain & equilibrium in 3D','Constitutive laws (Hooke, anisotropy)','Plane problems & Airy stress function','Torsion of prismatic bars','Energy methods & variational principles','Plates & shells basics','FE verification vs analytical solutions'],
+  'SE2860': ['Modelling strategy & idealisation','Element choice (solid, shell, beam)','Meshing & mesh quality','Loads, constraints & contact','Linear static analysis workflow','Modal & buckling analysis','Nonlinear basics (material / geometric)','Verification, validation & reporting'],
+  'SE2126': ['Elasticity & anisotropy','Plasticity: yield criteria','Hardening & flow rules','Viscoelasticity & creep','Damage mechanisms','Composites & micromechanics'],
+  'SE2137': ['Fatigue fundamentals & S-N curves','Mean stress (Goodman, Haigh)','Notches & stress concentration','Strain-life (Coffin-Manson)','Variable amplitude & rainflow counting','Palmgren-Miner damage','Crack growth (Paris law)','Fatigue of welds','Design codes & safety factors'],
+  'SE2139': ['Griffith energy balance','Stress intensity factor K','LEFM & fracture toughness','Crack-tip plasticity','J-integral & EPFM','Mixed-mode fracture','Fatigue crack growth','Fracture mechanics with FEM'],
+  'SD2420': ['Weld joint types & quality','Static strength of welds','Fatigue: nominal stress method','Hot-spot stress method','Effective notch stress method','Residual stresses & distortion','Design codes (IIW, Eurocode 3)','Post-weld improvement techniques'],
+  'SD2150': ['SDOF / MDOF vibration refresher','FRFs & transfer functions','Measurement setup: sensors & excitation','Signal processing (FFT, windowing)','Experimental modal analysis','Model correlation & updating (MAC)','Own project review & report'],
+  'MF2019': ['Sketching & parametric part modelling','Design intent, equations & configurations','Assemblies & mates','Drawings from 3D models','Surface modelling basics','Rendering & visualisation'],
+  'SE2123': ['Strain gauges & bridges','Material testing (tensile, hardness, impact)','DIC & optical methods','Data acquisition & uncertainty'],
+  'MG2033': ['SPC & control charts','Process capability (Cp, Cpk)','Acceptance sampling','Six Sigma / DMAIC tools'],
+  'SG2211': ['Bluff-body flow & drag','Lift, downforce & crosswind','Wind-tunnel testing','CFD for vehicles'],
+  'SE202X': ['Re-read own thesis: aim, method, results','2-minute thesis pitch for interviews'],
+  'AK2030': ['Philosophy of science','Research methods & ethics'],
+  'SA2002': ['Sustainable development in engineering','Research methodology']
 };
 
 const MM_SW_ITEMS = [
