@@ -1,5 +1,5 @@
 /* Mamba Mentality v2 — core: utils, pacing, schedule model */
-const MM = { state: null, tab: 'today', view: 'day', date: null, toastTimer: null, rev: 0, _plan: null };
+const MM = { state: null, tab: 'today', view: 'day', date: null, toastTimer: null, rev: 0, _plan: null, _seq: null };
 const HOUR = 56;
 const WHOUR = 34;
 const TYPES = ['wake', 'jobs', 'swedish', 'revision', 'solidworks', 'deep', 'meal', 'mealprep', 'buffer', 'chill', 'wind', 'rest', 'other'];
@@ -67,9 +67,9 @@ function coursePace(c) {
   const w = Math.max(1 / 7, (new Date(c.deadline + 'T23:59:59') - new Date()) / (7 * 864e5));
   return (courseLeft(c) / w).toFixed(1);
 }
-function sortedRevision() {
+function sortedRevision() { // courses to revise (high, quick), in list order — KFUPM and KTH MSc alike
   const pr = { high: 0, quick: 1 };
-  return MM.state.courses.filter((x) => x.priority !== 'later' && courseLeft(x) > 0)
+  return MM.state.courses.filter((x) => mmIsScheduled(x) && courseLeft(x) > 0)
     .sort((a, b) => pr[a.priority] - pr[b.priority] || MM.state.courses.indexOf(a) - MM.state.courses.indexOf(b));
 }
 function activeCourse() {
@@ -78,22 +78,23 @@ function activeCourse() {
   if (!c) { c = sortedRevision()[0] || null; if (c && s.activeCourse !== c.code) { s.activeCourse = c.code; persist(); } }
   return c;
 }
-function revisionQueue() {
-  const list = sortedRevision(); const act = activeCourse();
-  if (act) { const i = list.indexOf(act); if (i > 0) { list.splice(i, 1); list.unshift(act); } }
-  return list;
+/** Interleaved topic order (KFUPM ⇄ KTH MSc), see mmRevisionSequence in storage.js. */
+function revisionSequence() {
+  const act = activeCourse();
+  const key = MM.rev + '|' + (act ? act.code : '');
+  if (!MM._seq || MM._seq.key !== key || MM._seq.state !== MM.state) MM._seq = { key, state: MM.state, seq: mmRevisionSequence(MM.state.courses, act && act.code) };
+  return MM._seq.seq;
+}
+function revisionQueue() { // distinct courses in the order they come up in the interleaved sequence
+  const out = []; revisionSequence().forEach((x) => { if (!out.includes(x.course)) out.push(x.course); });
+  return out;
 }
 function workDaysBetween(a, b) { let n = 0; for (let d = a; d < b; d = mmAddDays(d, 1)) if (!isRestDay(d)) n++; return n; }
 function planBaseDate() { const ps = planStartDate(); const td = mmTodayStr(); return ps > td ? ps : td; }
 function projectRevision(ds) {
-  const queue = revisionQueue(); if (!queue.length) return null;
-  let skip = Math.floor(workDaysBetween(planBaseDate(), ds) * ((PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6));
-  for (const c of queue) {
-    const left = c.topics.filter((x) => !x.done);
-    if (skip < left.length) return { course: c, topic: left[skip] };
-    skip -= left.length;
-  }
-  return null;
+  const seq = revisionSequence(); if (!seq.length) return null;
+  const skip = Math.floor(workDaysBetween(planBaseDate(), ds) * ((PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6));
+  return skip < seq.length ? seq[skip] : null;
 }
 function projectSwedish(ds) {
   const left = chapters().filter((c) => !c.done); if (!left.length) return null;
