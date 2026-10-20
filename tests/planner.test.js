@@ -234,3 +234,74 @@ test('random scenarios: never any overlap, tasks within [start, deadline], no pr
   }
   assert.ok(scenarios === 60 && checkedDays === 840);
 });
+
+// ---------- KTH MSc revision group (v4.2) ----------
+const KTH_HIGH = ['SE1025', 'SE2132', 'SE2860', 'SE2126', 'SE2137', 'SE2139', 'SD2420', 'SD2150', 'MF2019'];
+const KTH_QUICK = ['SE2123', 'MG2033', 'SG2211', 'SE202X'];
+const KTH_IGNORE = ['AK2030', 'SA2002'];
+const revCodes = (app, from, n) => dates(from, n).flatMap((ds) => day(app, ds).blocks
+  .filter((b) => b.type === 'revision' || b.type === 'deep').map((b) => (b.meta.detail || '').split(' — ')[0]));
+
+test('KTH courses appear in revision blocks, interleaved with KFUPM, from the plan start (no overlaps)', () => {
+  const app = loadApp();
+  const kth = run(app, "MM.state.courses.filter((c) => c.group === 'kth').map((c) => c.code + ':' + c.priority)");
+  assert.deepStrictEqual(Array.from(kth), [...KTH_HIGH.map((c) => c + ':high'), ...KTH_QUICK.map((c) => c + ':quick'), ...KTH_IGNORE.map((c) => c + ':ignore')]);
+  const codes = revCodes(app, '2026-10-21', 14);
+  assert.ok(codes.some((c) => KTH_HIGH.includes(c)), 'a KTH course is in a revision block within 2 weeks');
+  assert.ok(codes.some((c) => /^(MATH|PHYS|ME) /.test(c)), 'KFUPM revision continues too');
+  assert.ok(day(app, '2026-10-23').blocks.some((b) => b.type === 'revision' && /^SE1025 — /.test(b.meta.detail)));
+  // the interleaved sequence alternates groups while both have topics left
+  const seq = run(app, "revisionSequence().slice(0, 10).map((x) => x.course.group)");
+  assert.deepStrictEqual(Array.from(seq), ['kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth']);
+  assert.strictEqual(day(app, '2026-10-20').blocks.length, 0, 'still nothing before the plan start');
+  dates('2026-10-21', 14).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
+});
+test('KTH priorities: ignore / later never scheduled; changing priority in the app reschedules', () => {
+  const app = loadApp();
+  const all = () => new Set(Array.from(run(app, 'revisionSequence().map((x) => x.course.code)')));
+  KTH_IGNORE.forEach((c) => assert.ok(!all().has(c)));
+  [...KTH_HIGH, ...KTH_QUICK].forEach((c) => assert.ok(all().has(c), c + ' is scheduled'));
+  run(app, "setCoursePriority('SE1025', 'ignore'); setCoursePriority('AK2030', 'high');");
+  assert.ok(!all().has('SE1025')); assert.ok(all().has('AK2030'));
+  assert.ok(!revCodes(app, '2026-10-21', 21).includes('SE1025'));
+  run(app, "setCoursePriority('SE2137', 'later');");
+  assert.ok(!all().has('SE2137'));
+  assert.strictEqual(run(app, "MM.state.courses.find((c) => c.code === 'SE2137').priority"), 'later');
+});
+test('migration v3 → v4: KTH group added once, KFUPM courses + progress + other data untouched', () => {
+  const app = loadApp();
+  run(app, `__v3 = mmDefaultState(); __v3.version = 3;
+    __v3.courses = __v3.courses.filter((c) => c.group !== 'kth').map((c) => { const o = JSON.parse(JSON.stringify(c)); delete o.group; return o; });
+    __v3.courses[0].topics[0].done = true; __v3.courses[0].deadline = '2026-11-30'; __v3.courses[5].priority = 'later';
+    __v3.courses.push({ id: 'cx', code: 'SE 2137', title: 'Fatigue (mine)', priority: 'quick', topics: [{ id: 'q', name: 'my topic', done: true }], hours: 3, deadline: null, notes: 'n', links: '' });
+    __v3.notes = [{ id: 'n1', text: 'keep' }]; __v3.settings.activeCourse = 'MATH 101';`);
+  const before = run(app, 'JSON.stringify(__v3.courses)');
+  const s = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__v3)))');
+  assert.strictEqual(s.version, 4);
+  const old = JSON.parse(before);
+  old.forEach((c, i) => { const n = s.courses[i]; assert.strictEqual(n.code, c.code); assert.strictEqual(n.priority, c.priority); assert.strictEqual(n.deadline, c.deadline); assert.deepStrictEqual(n.topics, c.topics); });
+  assert.ok(s.courses.slice(0, old.length - 1).every((c) => c.group === 'kfupm'));
+  const mine = s.courses.find((c) => c.code === 'SE 2137');
+  assert.strictEqual(mine.group, 'kth'); assert.strictEqual(mine.title, 'Fatigue (mine)'); assert.strictEqual(mine.topics.length, 1);
+  assert.ok(!s.courses.some((c) => c.code === 'SE2137'), 'no duplicate of an existing course');
+  assert.strictEqual(s.courses.filter((c) => c.group === 'kth').length, 15);
+  assert.ok(s.courses.filter((c) => c.group === 'kth' && c.priority === 'high').every((c) => c.deadline >= '2026-10-21'));
+  assert.strictEqual(s.notes.length, 1); assert.strictEqual(s.settings.activeCourse, 'MATH 101');
+  // idempotent; a KTH course the user deletes later is not re-added
+  app.__s = s;
+  const again = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__s)))');
+  assert.strictEqual(again.courses.length, s.courses.length);
+  app.__s.courses = s.courses.filter((c) => c.code !== 'AK2030');
+  assert.ok(!run(app, 'mmMigrate(JSON.parse(JSON.stringify(__s)))').courses.some((c) => c.code === 'AK2030'));
+  // mmLoad keeps an untouched copy of the old data and saves the upgrade
+  run(app, "localStorage.setItem(MM_STORAGE_KEY, JSON.stringify(__v3)); MM.state = mmLoad();");
+  assert.strictEqual(app.store['mamba-mentality-v1-backup-v3'], JSON.stringify(run(app, '__v3')));
+  assert.strictEqual(JSON.parse(app.store['mamba-mentality-v1']).version, 4);
+});
+test('KFUPM seed list is unchanged by the KTH addition', () => {
+  const app = loadApp();
+  const k = Array.from(run(app, "MM.state.courses.filter((c) => c.group === 'kfupm').map((c) => c.code + ':' + c.priority)"));
+  assert.deepStrictEqual(k, Array.from(run(app, "MM_SEED.courses.map((c) => c.code + ':' + c.priority)")));
+  assert.strictEqual(k.length, 30);
+  assert.strictEqual(k.filter((x) => x.endsWith(':high')).length, 19);
+});
