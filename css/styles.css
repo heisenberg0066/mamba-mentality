@@ -360,7 +360,12 @@ main{padding-top:8px}
 
 .chapter-main{flex:1;min-width:0;background:none;border:0;color:var(--text);text-align:start;cursor:pointer;padding:0;font-family:inherit;font-size:15px}
 .course-btn{display:block;width:100%;background:none;border:0;border-bottom:1px solid var(--border);color:var(--text);text-align:start;padding:12px 2px;cursor:pointer;font-family:inherit;font-size:15px}
-.course-btn.active{background:rgba(201,162,39,.06)}
+.course-btn.active,.course-row.active{background:rgba(201,162,39,.06)}
+.course-row{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+.course-row:last-child{border-bottom:0}
+.course-row .course-btn{flex:1;min-width:0;border-bottom:0}
+.prio-sel{flex-shrink:0;width:auto;max-width:38%;min-height:38px;font-size:13px;padding-inline:8px}
+.group-title{margin-top:18px}
 .progress.thin{height:6px}
 
 .goal-title{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem}

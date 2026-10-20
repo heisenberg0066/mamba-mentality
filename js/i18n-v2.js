@@ -238,3 +238,19 @@ Object.assign(MM_I18N.sv, {
   autoMoved: 'Flyttad hit automatiskt av planeraren', apptNoMiss: 'Redigera eller ta bort tiden i stället',
   type_appt: 'Tid', type_travel: 'Resa', type_task: 'Uppgift', blockTravel: 'Resa', durH: 'h', durM: 'min'
 });
+/* v4.2 — KTH MSc course group, per-course priority */
+Object.assign(MM_I18N.en, {
+  priorityIgnore: 'Ignore', courseGroup: 'Group', group_kfupm: 'KFUPM (BSc)', group_kth: 'KTH MSc',
+  priorityHint: 'Set the priority per course — the plan updates right away. Only “Must / want” and “Quick pass” are scheduled.',
+  interleaveNote: 'KFUPM and KTH MSc revision alternate in your plan.', swPrepLink: 'SolidWorks prep', relatedCourse: 'Related course'
+});
+Object.assign(MM_I18N.ar, {
+  priorityIgnore: 'تجاهل', courseGroup: 'المجموعة', group_kfupm: 'KFUPM (بكالوريوس)', group_kth: 'KTH ماجستير',
+  priorityHint: 'حدّد أولوية كل مقرر — تتحدث الخطة فوراً. تُجدول فقط «مهم / مطلوب» و«مراجعة سريعة».',
+  interleaveNote: 'تتناوب مراجعة KFUPM وماجستير KTH في خطتك.', swPrepLink: 'تحضير SolidWorks', relatedCourse: 'مقرر مرتبط'
+});
+Object.assign(MM_I18N.sv, {
+  priorityIgnore: 'Hoppa över', courseGroup: 'Grupp', group_kfupm: 'KFUPM (kandidat)', group_kth: 'KTH (master)',
+  priorityHint: 'Välj prioritet per kurs — planen uppdateras direkt. Bara ”Måste / vill” och ”Snabb genomgång” schemaläggs.',
+  interleaveNote: 'Repetition av KFUPM och KTH varvas i planen.', swPrepLink: 'SolidWorks-förberedelse', relatedCourse: 'Relaterad kurs'
+});

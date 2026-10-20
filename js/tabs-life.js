@@ -92,7 +92,7 @@ function appBar(n, min, max) {
 function renderGoals(root) {
   const s = MM.state.settings; const gotJob = !!s.gotJob; const wa = weekApps();
   const st = swedishStats(); const sw = MM.state.solidworks;
-  const rc = MM.state.courses.filter((c) => c.priority !== 'later');
+  const rc = MM.state.courses.filter(mmIsScheduled);
   const totT = rc.reduce((a, c) => a + c.topics.length, 0); const leftT = rc.reduce((a, c) => a + courseLeft(c), 0);
   const proj = mmAddDays(mmTodayStr(), Math.ceil((leftT / (PACE_BY_MODE[s.jobMode] || 4)) * 7));
   const swDone = sw.items.filter((i) => i.done).length;
