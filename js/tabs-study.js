@@ -42,7 +42,7 @@ function renderSwedish(root) {
     h += `<div class="card"><h3>${esc(t(key))}</h3>${list.map((c) => `
       <div class="chapter row between">
         <button class="chapter-main" data-ch-edit="${esc(c.id)}"><b>${esc(c.book)} · ${c.num}</b><div class="muted">${esc(c.title)}${c.notes ? ' · 📝' : ''}</div>
-          <div class="muted small">~${c.mins} min${c.done && c.doneDate ? ' · ✓ ' + esc(c.doneDate) : ''} · ✎</div></button>
+          <div class="muted small">~${c.mins} min${c.done && c.doneDate ? ' · ✓ ' + esc(c.doneDate) : ''}${!c.done && Number(c.part) > 0 ? ` · <span class="u-chip">${uH(Math.round(c.part * 4) / 4)} ${esc(t('partDone'))}</span>` : ''} · ✎</div></button>
         <button class="btn sm ${c.done ? 'success on' : 'primary'}" data-ch-toggle="${esc(c.id)}">${c.done ? '✓' : esc(t('markChapterDone'))}</button></div>`).join('')}</div>`;
   });
   root.innerHTML = h;
@@ -87,7 +87,7 @@ function renderStudy(root) {
       <h2 style="margin:4px 0">${esc(ac.code)} — ${esc(ac.title)}</h2>
       <div class="progress" style="margin:8px 0"><span style="width:${coursePct(ac)}%"></span></div>
       <div class="muted">${ac.topics.length - courseLeft(ac)}/${ac.topics.length}${ac.deadline ? ' · ' + esc(t('deadline')) + ' ' + ac.deadline : ''}${coursePace(ac) ? ' · ' + coursePace(ac) + ' ' + esc(t('pacePerWeek')) : ''}</div>
-      ${nextTp ? `<div class="row between" style="margin-top:10px"><div style="flex:1;min-width:0"><div class="muted small">${esc(t('nextTopic'))}</div><b>${esc(nextTp.name)}</b></div>
+      ${nextTp ? `<div class="row between" style="margin-top:10px"><div style="flex:1;min-width:0"><div class="muted small">${esc(t('nextTopic'))}</div><b>${esc(nextTp.name)}</b>${Number(nextTp.part) > 0 ? ` <span class="u-chip">${uH(Math.round(nextTp.part * 4) / 4)} ${esc(t('partDone'))}</span>` : ''}</div>
         <button class="btn primary" id="tp-done" data-tp="${esc(nextTp.id)}">✓ ${esc(t('topicDone'))}</button></div>` : ''}</div>`;
   } else h += `<div class="card"><b>${esc(t('allCoursesDone'))}</b></div>`;
   h += `<div class="card"><div class="row"><button class="btn primary" id="add-course-btn">＋ ${esc(t('addCourse'))}</button><button class="btn" id="auto-dl">${esc(t('autoDeadlines'))}</button></div></div>`;

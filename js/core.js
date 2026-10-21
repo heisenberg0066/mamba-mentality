@@ -91,16 +91,6 @@ function revisionQueue() { // distinct courses in the order they come up in the 
 }
 function workDaysBetween(a, b) { let n = 0; for (let d = a; d < b; d = mmAddDays(d, 1)) if (!isRestDay(d)) n++; return n; }
 function planBaseDate() { const ps = planStartDate(); const td = mmTodayStr(); return ps > td ? ps : td; }
-function projectRevision(ds) {
-  const seq = revisionSequence(); if (!seq.length) return null;
-  const skip = Math.floor(workDaysBetween(planBaseDate(), ds) * ((PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6));
-  return skip < seq.length ? seq[skip] : null;
-}
-function projectSwedish(ds) {
-  const left = chapters().filter((c) => !c.done); if (!left.length) return null;
-  const perDay = Number(swedishStats().pace) / 6;
-  return left[Math.min(left.length - 1, Math.floor(workDaysBetween(planBaseDate(), ds) * perDay))];
-}
 function nextSwItem() { return MM.state.solidworks.items.find((i) => !i.done) || null; }
 function completeTopic(course, topicId) {
   const tp = course.topics.find((x) => x.id === topicId); if (!tp) return;
@@ -135,17 +125,85 @@ function templateFor(key, ds) {
   return clone(custom && custom.length ? custom : generatedTemplate(key, ds));
 }
 function baseBlocks(ds) { const own = MM.state.days[ds]; return own ? clone(own) : templateFor(templateKey(ds), ds); }
-function enrich(b, ds) {
+function swConvert(b, ds) {
   const swStart = MM.state.settings.solidWorksStart || MM_SEED.solidWorksStart;
   if (b.type === 'solidworks' && ds < swStart) { b.type = 'revision'; if (!b.title) b.labelKey = 'blockRevisionMore'; }
+  return b;
+}
+function droppedIds(ds) { return new Set((MM.state.dayDrops && MM.state.dayDrops[ds]) || []); }
+/** Routine blocks of a day (template or own day), minus the ones you chose to drop that day. */
+function routineBlocks(ds) { const drop = droppedIds(ds); return baseBlocks(ds).filter((b) => !drop.has(b.id)); }
+
+/* ---- v4.3 real progress: study streams (units = course topics / Swedish chapters) ----
+ * Every study block gets a planned amount (the stream's daily pace split over that day's study blocks by length).
+ * The queue position of a block = sum of the planned amounts of the not-yet-recorded blocks before it, counted
+ * from the plan base day. Recording what you really did moves the queue itself, so every later block slides:
+ * more → the next items come earlier, less → the unfinished part is first in the next session. Block times never change. */
+const STREAM_TYPES = { rev: ['revision', 'deep'], sw: ['swedish'] };
+function streamOf(type) { return STREAM_TYPES.rev.includes(type) ? 'rev' : STREAM_TYPES.sw.includes(type) ? 'sw' : null; }
+function streamQueue(stream) {
+  if (stream === 'rev') return revisionSequence().map((x) => ({ key: 'tp:' + x.topic.id, obj: x.topic, label: `${x.course.code} — ${x.topic.name}`, course: x.course }));
+  return chapters().filter((c) => !c.done).map((c) => ({ key: 'ch:' + c.id, obj: c, label: `${c.book} · ${c.num}: ${c.title}` }));
+}
+function streamPerDay(stream) {
+  if (stream === 'rev') return (PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6;
+  return Math.max(0, Number(swedishStats().pace) || 0) / 6;
+}
+const unitLeft = (o) => Math.max(0, 1 - (Number(o.part) || 0));
+/** Item of the queue at a fractional position (0 = the start of what is left of the first item). */
+function queueAt(queue, pos) {
+  let acc = 0;
+  for (let i = 0; i < queue.length; i++) {
+    const L = unitLeft(queue[i].obj); if (acc + L > pos + 1e-9) return { i, x: queue[i], into: (Number(queue[i].obj.part) || 0) + (pos - acc) };
+    acc += L;
+  }
+  return null;
+}
+function progressModel() {
+  const key = MM.rev + '|' + mmTodayStr();
+  if (!MM._prog || MM._prog.key !== key || MM._prog.state !== MM.state) MM._prog = { key, state: MM.state, rev: null, sw: null };
+  return MM._prog;
+}
+const blockMins = (b) => Math.max(0, endMin(b.end) - toMin(b.start));
+function recordedKeys() { const o = new Set(); (MM.state.progress || []).forEach((r) => o.add(r.homeDs + '|' + r.baseId)); return o; }
+function studyBlocks(ds, stream) {
+  return routineBlocks(ds).map((b) => swConvert({ ...b }, ds)).filter((b) => streamOf(b.type) === stream && blockMins(b) > 0);
+}
+/** Planned amount + queue position of every study block of a day: { baseId: { pos, amount, recorded } }. */
+function streamDay(stream, ds) {
+  const pm = progressModel();
+  const base = planBaseDate();
+  const plain = (d) => { const bl = studyBlocks(d, stream); const tot = bl.reduce((a, b) => a + blockMins(b), 0); const u = streamPerDay(stream); const o = {}; bl.forEach((b) => { o[b.id] = { pos: 0, amount: tot ? (u * blockMins(b)) / tot : 0, recorded: false }; }); return o; };
+  if (ds < base) return plain(ds);
+  if (!pm[stream]) pm[stream] = { next: base, pos: 0, at: {}, rec: recordedKeys() };
+  const m = pm[stream];
+  let guard = 0;
+  while (m.next <= ds && guard++ < 800) {
+    const d = m.next; const day = plain(d);
+    Object.keys(day).forEach((id) => { const x = day[id]; x.pos = m.pos; x.recorded = m.rec.has(d + '|' + id); if (!x.recorded) m.pos += x.amount; });
+    m.at[d] = day; m.next = mmAddDays(d, 1);
+  }
+  return m.at[ds] || {};
+}
+function blockUnits(ds, b) {
+  const stream = streamOf(b.type); if (!stream) return null;
+  const home = (b.meta && (b.meta.movedFrom || b.meta.from)) || ds;
+  const id = (b.meta && b.meta.baseId) || String(b.id).split('~')[0];
+  const x = streamDay(stream, home)[id];
+  return x ? { stream, ...x } : { stream, pos: 0, amount: 0, recorded: false };
+}
+function enrich(b, ds) {
+  swConvert(b, ds);
   b.meta = b.meta || {};
+  if (!b.meta.baseId) b.meta.baseId = b.id;
   if (!b.detailOverride) {
-    if (b.type === 'swedish') {
-      const ch = ds <= mmTodayStr() ? nextSwedishChapter() : projectSwedish(ds);
-      b.meta.detail = ch ? `${ch.book} · ${ch.num}: ${ch.title}` : '';
-    } else if (b.type === 'revision' || b.type === 'deep') {
-      const p = projectRevision(ds);
-      b.meta.detail = p ? `${p.course.code} — ${p.topic.name}` : '';
+    const stream = streamOf(b.type);
+    if (stream) {
+      const u = blockUnits(ds, b); const at = queueAt(streamQueue(stream), u.pos);
+      const rec = u.recorded ? (MM.state.progress || []).filter((r) => r.homeDs === ((b.meta.movedFrom || b.meta.from) || ds) && r.baseId === b.meta.baseId).pop() : null;
+      b.meta.detail = rec ? rec.from : at ? at.x.label : '';
+      if (rec) { b.meta.doneUnits = rec.actual; b.meta.plannedUnits = rec.planned; }
+      b.meta.units = Math.round(u.amount * 100) / 100; b.meta.unitInto = at ? Math.round(at.into * 100) / 100 : 0;
     } else if (b.type === 'solidworks') {
       const it = nextSwItem(); b.meta.detail = it ? it.title : '';
     }
@@ -165,11 +223,14 @@ function planStamp() {
 function planHorizon() {
   let to = mmAddDays(planBaseDate(), 21);
   const bump = (d) => { if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) { const x = mmAddDays(d, 8); if (x > to) to = x; } };
-  planItems().forEach((it) => { bump(it.date); bump(it.deadline); (it.log || []).forEach((l) => bump(l.ds)); });
+  planItems().forEach((it) => {
+    bump(it.date); bump(it.deadline); (it.log || []).forEach((l) => bump(l.ds));
+    if (it.repeat && it.repeat.mode === 'dates') (it.repeat.dates || []).forEach(bump);
+  });
   MM.state.missedQueue.forEach((q) => bump(q.rescheduleDate));
   const cap = mmAddDays(planBaseDate(), 400); return to > cap ? cap : to;
 }
-function planBaseDay(ds) { return { isRest: isRestDay(ds) && !MM.state.days[ds], blocks: baseBlocks(ds).map((b) => enrich(b, ds)) }; }
+function planBaseDay(ds) { return { isRest: isRestDay(ds) && !MM.state.days[ds], blocks: routineBlocks(ds).map((b) => enrich(b, ds)) }; }
 function computePlan() {
   return MMPlanner.buildPlan({
     planStart: planStartDate(), to: planHorizon(), stamp: planStamp(), baseDay: planBaseDay,
@@ -183,7 +244,7 @@ function currentPlan() {
   return MM._plan.plan;
 }
 function fixedOnlyDay(ds) { // days before the plan start: only your own appointments / done task chunks
-  const items = planItems().filter((it) => (it.kind === 'appt' && it.date === ds) || (it.kind === 'task' && (it.log || []).some((l) => l.ds === ds))).map((it) => (it.kind === 'task' ? { ...it, done: true } : it));
+  const items = planItems().filter((it) => (it.kind === 'appt' && MMPlanner.occurrenceDates(it, ds, ds).length) || (it.kind === 'task' && (it.log || []).some((l) => l.ds === ds))).map((it) => (it.kind === 'task' ? { ...it, done: true } : it));
   if (!items.length) return { isRest: false, blocks: [] };
   return MMPlanner.buildPlan({ planStart: ds, to: ds, stamp: { date: ds, min: 0 }, baseDay: () => ({ isRest: false, blocks: [] }), items }).days[ds];
 }
@@ -206,7 +267,10 @@ function planWarnings() {
 }
 function itemBlockStatus(ds, b, status) {
   const it = planItems().find((x) => x.id === b.meta.itemId); if (!it) return;
-  if (it.kind === 'appt') { if (status === 'done') it.done = !it.done; else { toast(t('apptNoMiss')); return; } }
+  if (it.kind === 'appt') {
+    if (status !== 'done') { toast(t('apptNoMiss')); return; }
+    if (isSeries(it) && b.meta.occ) { const o = occOverride(it, b.meta.occ); o.done = !o.done; } else it.done = !it.done;
+  }
   else if (b.meta.doneChunk != null) { if (status === 'done') { it.log.splice(b.meta.doneChunk, 1); it.done = false; it.doneAt = null; } }
   else if (status === 'done') {
     it.log = it.log || []; it.log.push({ ds, start: b.start, end: b.end });
@@ -226,8 +290,11 @@ function findNextFreeDate(fromDs) {
   }
   return mmAddDays(fromDs, 1);
 }
+function isSeries(it) { return !!(it && it.kind === 'appt' && it.repeat && it.repeat.mode && it.repeat.mode !== 'none'); }
+function occOverride(it, occ) { it.overrides = it.overrides || {}; return (it.overrides[occ] = it.overrides[occ] || {}); }
 function setStatus(ds, b, status) {
   if (b.meta && b.meta.itemId) { itemBlockStatus(ds, b, status); return; }
+  if (status === 'done' && b.status === 'done' && streamOf(b.type)) undoProgressFor(ds, b);
   if (b.meta && b.meta.queueId) {
     const q = MM.state.missedQueue.find((x) => x.id === b.meta.queueId);
     if (q) {
@@ -246,6 +313,53 @@ function setStatus(ds, b, status) {
     }
   }
   persist();
+}
+/* ---- recording real progress ---- */
+function unitObj(key) {
+  const [k, id] = [key.slice(0, 3), key.slice(3)];
+  if (k === 'ch:') return chapters().find((c) => c.id === id) || null;
+  for (const c of MM.state.courses) { const tp = (c.topics || []).find((x) => x.id === id); if (tp) return tp; }
+  return null;
+}
+/** What happens if `amount` units are recorded now: the item you'd stop at, and how much is consumed. */
+function previewProgress(stream, amount) {
+  const q = streamQueue(stream); const at = queueAt(q, Math.max(0, Number(amount) || 0));
+  return { from: q[0] || null, next: at ? at.x : null, nextInto: at ? at.into : 0, finished: q.length && !at };
+}
+function recordProgress(ds, b, actual) {
+  const stream = streamOf(b.type); if (!stream) return null;
+  const u = blockUnits(ds, b);
+  const amount = Math.max(0, Math.min(50, Math.round((Number(actual) || 0) * 100) / 100));
+  const q = streamQueue(stream); const undo = []; let left = amount;
+  const first = q[0] ? q[0].label : '';
+  for (const x of q) {
+    if (left <= 1e-9) break;
+    const o = x.obj; const part = Number(o.part) || 0; const rem = 1 - part;
+    undo.push({ key: x.key, part: o.part, done: o.done, doneDate: o.doneDate });
+    if (left >= rem - 1e-9) { o.done = true; o.doneDate = ds; delete o.part; left -= rem; }
+    else { o.part = Math.round((part + left) * 1000) / 1000; left = 0; }
+  }
+  if (b.status !== 'done') setStatus(ds, b, 'done');
+  MM.state.progress = MM.state.progress || [];
+  const rec = { id: mmUid('pg'), ds, blockId: b.id, baseId: (b.meta && b.meta.baseId) || String(b.id).split('~')[0], homeDs: (b.meta && (b.meta.movedFrom || b.meta.from)) || ds,
+    stream, planned: Math.round(u.amount * 100) / 100, actual: amount, at: new Date().toISOString(), from: first, undo };
+  MM.state.progress.push(rec);
+  if (stream === 'rev') { // finished the active course? move on, like ticking the last topic in Study
+    const ac = MM.state.courses.find((c) => c.code === MM.state.settings.activeCourse);
+    if (ac && courseLeft(ac) === 0) MM.state.settings.activeCourse = null;
+  }
+  persist();
+  return rec;
+}
+function progressFor(ds, b) {
+  const baseId = (b.meta && b.meta.baseId) || String(b.id).split('~')[0];
+  return (MM.state.progress || []).filter((r) => r.ds === ds && (r.blockId === b.id || r.baseId === baseId)).pop() || null;
+}
+function undoProgressFor(ds, b) {
+  const r = progressFor(ds, b); if (!r) return false;
+  r.undo.slice().reverse().forEach((u) => { const o = unitObj(u.key); if (!o) return; o.done = !!u.done; o.doneDate = u.doneDate || null; if (u.part == null) delete o.part; else o.part = u.part; });
+  MM.state.progress = MM.state.progress.filter((x) => x !== r);
+  return true;
 }
 function materialize(ds, scope) {
   if (scope === 'day') { if (!MM.state.days[ds]) MM.state.days[ds] = baseBlocks(ds); return MM.state.days[ds]; }

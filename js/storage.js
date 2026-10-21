@@ -1,6 +1,7 @@
-const MM_APP_VERSION = '4.2.0';
+const MM_APP_VERSION = '4.3.0';
 const MM_STORAGE_KEY = 'mamba-mentality-v1'; // same key: v2 migrates in place
-const MM_VERSION = 4; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
+const MM_VERSION = 5; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
+                      // v5: real study progress (partial units, progress log), repeating appointments, per-day drops
 
 function mmUid(p) { return (p || 'id') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function mmTodayStr(d) {
@@ -49,7 +50,9 @@ function mmRevisionSequence(courses, activeCode) {
   });
   const seq = []; const n = Math.max(0, ...streams.map((x) => x.length));
   for (let i = 0; i < n; i++) streams.forEach((st) => { if (i < st.length) seq.push(st[i]); });
-  return seq;
+  // v4.3: a topic you already started (partly done) comes first — the next session starts where you stopped
+  const part = (x) => Number(x.topic.part) > 0 && Number(x.topic.part) < 1;
+  return seq.filter(part).concat(seq.filter((x) => !part(x)));
 }
 
 /** Default deadlines from the interleaved revision order (topicsPerWeek pace). onlyCodes: limit which courses get one. */
@@ -111,7 +114,9 @@ function mmDefaultState() {
     goalsMeta: {},      // { goalId: { notes, target, link } }
     sunday: { checklist: { reviewGoals: false, backup: false, restDay: false, courses: false, swedish: false }, notes: '', weekKey: null },
     notes: [],
-    reminders: []
+    reminders: [],
+    progress: [],       // v5: [{ id, ds, blockId, baseId, homeDs, stream, planned, actual, at, undo:[...] }] — what you really finished
+    dayDrops: {}        // v5: { 'YYYY-MM-DD': [routine block ids you chose to drop that day] }
   };
 }
 
@@ -137,6 +142,21 @@ function mmMigrate(parsed) {
   s.items = Array.isArray(parsed.items) ? parsed.items.filter((x) => x && x.id && (x.kind === 'appt' || x.kind === 'task')) : [];
   s.items.forEach((x) => { if (x.kind === 'task' && !Array.isArray(x.log)) x.log = []; });
   s.planStamp = parsed.planStamp && parsed.planStamp.date ? parsed.planStamp : null;
+  // v5: progress log, per-day drops, repeating appointments
+  s.progress = Array.isArray(parsed.progress) ? parsed.progress.filter((r) => r && r.id && r.stream) : [];
+  s.dayDrops = parsed.dayDrops && typeof parsed.dayDrops === 'object' && !Array.isArray(parsed.dayDrops) ? parsed.dayDrops : {};
+  s.items.forEach((x) => {
+    if (x.kind === 'appt') {
+      const r = x.repeat && typeof x.repeat === 'object' ? x.repeat : { mode: 'none' };
+      if (!['none', 'weekly', 'dates'].includes(r.mode)) r.mode = 'none';
+      if (r.mode === 'weekly') r.days = Array.isArray(r.days) ? r.days.map(Number).filter((d) => d >= 0 && d <= 6) : [];
+      if (r.mode === 'dates') r.dates = Array.isArray(r.dates) ? r.dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort() : [];
+      x.repeat = r;
+      if (!Array.isArray(x.skip)) x.skip = [];
+      if (!x.overrides || typeof x.overrides !== 'object') x.overrides = {};
+    }
+    if (x.kind === 'task' && !Array.isArray(x.skipDays)) x.skipDays = [];
+  });
   if (!s.settings.planStart || !/^\d{4}-\d{2}-\d{2}$/.test(s.settings.planStart)) s.settings.planStart = MM_SEED.planStart;
 
   // Swedish: v1 had { id: {done, doneAt} }

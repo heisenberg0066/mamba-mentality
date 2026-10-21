@@ -277,7 +277,7 @@ test('migration v3 → v4: KTH group added once, KFUPM courses + progress + othe
     __v3.notes = [{ id: 'n1', text: 'keep' }]; __v3.settings.activeCourse = 'MATH 101';`);
   const before = run(app, 'JSON.stringify(__v3.courses)');
   const s = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__v3)))');
-  assert.strictEqual(s.version, 4);
+  assert.strictEqual(s.version, run(app, 'MM_VERSION'));
   const old = JSON.parse(before);
   old.forEach((c, i) => { const n = s.courses[i]; assert.strictEqual(n.code, c.code); assert.strictEqual(n.priority, c.priority); assert.strictEqual(n.deadline, c.deadline); assert.deepStrictEqual(n.topics, c.topics); });
   assert.ok(s.courses.slice(0, old.length - 1).every((c) => c.group === 'kfupm'));
@@ -296,7 +296,7 @@ test('migration v3 → v4: KTH group added once, KFUPM courses + progress + othe
   // mmLoad keeps an untouched copy of the old data and saves the upgrade
   run(app, "localStorage.setItem(MM_STORAGE_KEY, JSON.stringify(__v3)); MM.state = mmLoad();");
   assert.strictEqual(app.store['mamba-mentality-v1-backup-v3'], JSON.stringify(run(app, '__v3')));
-  assert.strictEqual(JSON.parse(app.store['mamba-mentality-v1']).version, 4);
+  assert.strictEqual(JSON.parse(app.store['mamba-mentality-v1']).version, run(app, 'MM_VERSION'));
 });
 test('KFUPM seed list is unchanged by the KTH addition', () => {
   const app = loadApp();
@@ -304,4 +304,246 @@ test('KFUPM seed list is unchanged by the KTH addition', () => {
   assert.deepStrictEqual(k, Array.from(run(app, "MM_SEED.courses.map((c) => c.code + ':' + c.priority)")));
   assert.strictEqual(k.length, 30);
   assert.strictEqual(k.filter((x) => x.endsWith(':high')).length, 19);
+});
+
+// ---------- v4.3: real progress ----------
+const studyOn = (app, ds, types = ['revision', 'deep']) => day(app, ds).blocks.filter((b) => types.includes(b.type));
+const times = (app, from, n) => dates(from, n).map((ds) => day(app, ds).blocks.map((b) => `${b.id}@${b.start}-${b.end}`).join(','));
+const seqLabels = (app) => Array.from(run(app, "revisionSequence().map((x) => x.course.code + ' — ' + x.topic.name)"));
+
+test('progress overshoot: next sessions start where you stopped and the later queue slides earlier (same block times)', () => {
+  const app = loadApp();
+  const seq = seqLabels(app);
+  const before = times(app, '2026-10-21', 7);
+  const b = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  assert.ok(b.meta.units > 0 && b.meta.units < 1, 'a session has a planned amount');
+  assert.strictEqual(b.meta.detail, seq[0]);
+  const laterBefore = studyOn(app, '2026-10-23')[0].meta.detail;
+  app.__b = b;
+  const rec = run(app, "recordProgress('2026-10-21', __b, 2.5)");
+  assert.strictEqual(rec.actual, 2.5); assert.ok(rec.planned > 0 && rec.planned < 1);
+  // two whole topics done, the third is half done and comes first in the queue
+  const s2 = seqLabels(app);
+  assert.ok(!s2.includes(seq[0]) && !s2.includes(seq[1]));
+  assert.strictEqual(s2[0], seq[2]);
+  assert.strictEqual(run(app, "revisionSequence()[0].topic.part"), 0.5);
+  // the very next session continues the half-done topic
+  const next = studyOn(app, '2026-10-21').find((x) => x.id === 'revision2');
+  assert.strictEqual(next.meta.detail, seq[2]); assert.strictEqual(next.meta.unitInto, 0.5);
+  // the recorded block keeps what it was about + the amount
+  const done = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  assert.strictEqual(done.status, 'done'); assert.strictEqual(done.meta.doneUnits, 2.5); assert.strictEqual(done.meta.detail, seq[0]);
+  // later days are pulled forward: further along in the original order
+  const laterAfter = studyOn(app, '2026-10-23')[0].meta.detail;
+  assert.ok(seq.indexOf(laterAfter) > seq.indexOf(laterBefore), `${laterAfter} should come after ${laterBefore}`);
+  // no cramming, no emptying: every block keeps its time
+  assert.deepStrictEqual(times(app, '2026-10-21', 7), before);
+  dates('2026-10-21', 7).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
+  // persisted and survives a reload
+  run(app, 'MM.state = mmLoad(); MM.rev++;');
+  assert.strictEqual(run(app, 'MM.state.progress.length'), 1);
+  assert.strictEqual(seqLabels(app)[0], seq[2]);
+  assert.strictEqual(studyOn(app, '2026-10-21').find((x) => x.id === 'revision').meta.doneUnits, 2.5);
+  // un-ticking restores the queue
+  app.__b2 = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  run(app, "setStatus('2026-10-21', __b2, 'done')");
+  assert.deepStrictEqual(seqLabels(app), seq);
+  assert.strictEqual(run(app, 'MM.state.progress.length'), 0);
+});
+test('progress undershoot: the unfinished rest rolls into the next session of that subject', () => {
+  const app = loadApp();
+  const ch0 = run(app, 'nextSwedishChapter().id');
+  const sw = studyOn(app, '2026-10-21', ['swedish'])[0];
+  assert.ok(sw.meta.units >= 0.5, 'planned ≥ ½ chapter');
+  app.__b = sw; run(app, "recordProgress('2026-10-21', __b, 0.25)");
+  assert.strictEqual(run(app, 'nextSwedishChapter().id'), ch0, 'chapter not finished');
+  assert.strictEqual(run(app, 'nextSwedishChapter().part'), 0.25);
+  const nxt = studyOn(app, '2026-10-22', ['swedish'])[0];
+  assert.match(nxt.meta.detail, new RegExp(run(app, 'nextSwedishChapter().title').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.strictEqual(nxt.meta.unitInto, 0.25, 'next session starts at the rest');
+  // revision: a smaller amount than planned keeps the same topic first
+  const seq = seqLabels(app);
+  app.__r = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  run(app, "recordProgress('2026-10-21', __r, 0.1)");
+  assert.strictEqual(seqLabels(app)[0], seq[0]);
+  assert.strictEqual(studyOn(app, '2026-10-21').find((x) => x.id === 'revision2').meta.detail, seq[0]);
+});
+test('migration v4 → v5: progress + day drops added, repeat fields normalised, old data backed up', () => {
+  const app = loadApp();
+  run(app, `__v4 = mmDefaultState(); __v4.version = 4; delete __v4.progress; delete __v4.dayDrops;
+    __v4.items = [{ id: 'a', kind: 'appt', title: 'A', date: '2026-10-22', start: '09:00', duration: 30 }, { id: 't', kind: 'task', title: 'T', deadline: '2026-10-25', effort: 60, log: [] }];
+    __v4.courses[0].topics[0].done = true; localStorage.setItem(MM_STORAGE_KEY, JSON.stringify(__v4)); MM.state = mmLoad();`);
+  assert.strictEqual(app.store['mamba-mentality-v1-backup-v4'], JSON.stringify(run(app, '__v4')));
+  const s = JSON.parse(app.store['mamba-mentality-v1']);
+  assert.strictEqual(s.version, 5);
+  assert.deepStrictEqual(s.progress, []); assert.deepStrictEqual(s.dayDrops, {});
+  assert.strictEqual(s.items[0].repeat.mode, 'none'); assert.deepStrictEqual(s.items[1].skipDays, []);
+  assert.strictEqual(s.courses[0].topics[0].done, true);
+});
+
+// ---------- v4.3: repeating appointments ----------
+const apptOn = (app, ds, id) => day(app, ds).blocks.find((b) => b.type === 'appt' && b.meta.itemId === id);
+test('weekly repeating appointment blocks every occurrence (count), per-occurrence edit / delete, whole series delete', () => {
+  const app = loadApp();
+  setItems(app, [{ id: 'gym', kind: 'appt', title: 'Physio', date: '2026-10-21', start: '10:00', duration: 60, travelBefore: 15, travelAfter: 15, repeat: { mode: 'weekly', days: [1, 3], count: 4 }, skip: [], overrides: {} },
+    { id: 'tk', kind: 'task', title: 'Essay', deadline: '2026-11-03', effort: 600, splittable: true, chunk: 60, priority: 'normal', log: [] }]);
+  const occ = ['2026-10-21', '2026-10-26', '2026-10-28', '2026-11-02'];
+  occ.forEach((ds) => {
+    const a = apptOn(app, ds, 'gym'); assert.ok(a, 'occurrence on ' + ds);
+    assert.strictEqual(a.start, '10:00'); assert.strictEqual(a.meta.occ, ds);
+    const d = day(app, ds); assert.deepStrictEqual(overlaps(d.blocks), []);
+    d.blocks.filter((b) => !isFixedItem(b)).forEach((b) => assert.ok(te(b.end) <= tm('09:45') || tm(b.start) >= tm('11:15'), `${ds} ${b.type} ${b.start} overlaps`));
+  });
+  ['2026-10-22', '2026-10-23', '2026-11-04', '2026-11-09'].forEach((ds) => assert.ok(!apptOn(app, ds, 'gym'), 'no occurrence on ' + ds));
+  assert.strictEqual(plan(app).tasks.tk.placed, 600);
+  // edit one occurrence, delete another
+  run(app, "const it = itemById('gym'); occOverride(it, '2026-10-28').start = '15:00'; it.skip.push('2026-10-26'); MM.rev++;");
+  assert.strictEqual(apptOn(app, '2026-10-28', 'gym').start, '15:00');
+  assert.strictEqual(apptOn(app, '2026-10-21', 'gym').start, '10:00');
+  assert.ok(!apptOn(app, '2026-10-26', 'gym'));
+  assert.deepStrictEqual(overlaps(day(app, '2026-10-28').blocks), []);
+  // until date instead of a count
+  run(app, "itemById('gym').repeat = { mode: 'weekly', days: [3], until: '2026-11-11' }; MM.rev++;");
+  assert.ok(apptOn(app, '2026-11-11', 'gym')); assert.ok(!apptOn(app, '2026-11-18', 'gym'));
+  // whole series
+  run(app, "MM.state.items = MM.state.items.filter((x) => x.id !== 'gym'); MM.rev++;");
+  occ.forEach((ds) => assert.ok(!apptOn(app, ds, 'gym')));
+});
+test('specific-dates series: only on the picked dates (dates that vary month to month), planner works around each', () => {
+  const app = loadApp();
+  const picked = ['2026-10-22', '2026-11-03', '2026-11-17', '2026-12-08'];
+  setItems(app, [{ id: 'mig', kind: 'appt', title: 'Migrationsverket', date: picked[0], start: '13:00', end: '14:30', endMode: 'end', travelBefore: 45, travelAfter: 45, repeat: { mode: 'dates', dates: picked }, skip: [], overrides: {} }]);
+  picked.forEach((ds) => {
+    const a = apptOn(app, ds, 'mig'); assert.ok(a, ds); assert.strictEqual(a.end, '14:30');
+    const d = day(app, ds); assert.deepStrictEqual(overlaps(d.blocks), []);
+    assert.strictEqual(d.blocks.filter((b) => b.type === 'travel' && b.meta.itemId === 'mig').length, 2);
+  });
+  dates('2026-10-21', 60).filter((d) => !picked.includes(d)).forEach((ds) => assert.ok(!apptOn(app, ds, 'mig'), 'not on ' + ds));
+  assert.ok(run(app, "itemWhen(itemById('mig'))").includes('4'));
+});
+
+// ---------- v4.3: smarter clash handling ----------
+function addAppt(app, appt) {
+  app.__ap = appt;
+  run(app, "__before = currentPlan(); MM.state.items.push(JSON.parse(JSON.stringify(__ap))); MM.rev++; __after = currentPlan(); __rep = clashReport(__before, __after, __ap.id);");
+  return run(app, 'JSON.parse(JSON.stringify(__rep))');
+}
+test('clash: a displaced task is relocated automatically before its deadline and shown as moved', () => {
+  const app = loadApp();
+  setItems(app, [{ id: 'cv', kind: 'task', title: 'CV update', deadline: '2026-10-23', effort: 60, splittable: false, priority: 'normal', log: [] }]);
+  const c0 = plan(app).tasks.cv.chunks[0];
+  assert.ok(c0.ds < '2026-10-23');
+  const r = addAppt(app, { id: 'den', kind: 'appt', title: 'Dentist', date: c0.ds, start: P.hm(c0.s), duration: 60, travelBefore: 0, travelAfter: 0, repeat: { mode: 'none' } });
+  const p = plan(app);
+  assert.strictEqual(p.tasks.cv.placed, 60);
+  const c1 = p.tasks.cv.chunks[0]; assert.ok(c1.ds >= '2026-10-21' && c1.ds <= '2026-10-23');
+  assert.ok(c1.ds !== c0.ds || c1.s >= c0.s + 60 || c1.e <= c0.s, 'not on the dentist slot');
+  const mv = r.moved.find((m) => m.kind === 'task' && m.itemId === 'cv');
+  assert.ok(mv, 'reported as moved'); assert.ok(['sameDay', 'laterDay'].includes(mv.how)); assert.strictEqual(mv.ds, c1.ds);
+  assert.ok(!r.unplaced.some((u) => u.itemId === 'cv'));
+  dates('2026-10-21', 3).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
+});
+test('clash: commute-suitable work moves into the travel time (task + Swedish), no overlaps', () => {
+  const app = loadApp();
+  setItems(app, [{ id: 'fc', kind: 'task', title: 'Flashcards', deadline: '2026-10-21', effort: 30, splittable: false, priority: 'normal', commute: true, log: [] }]);
+  const c0 = plan(app).tasks.fc.chunks[0]; assert.ok(!c0.commute, 'free slot first while there is one');
+  const r = addAppt(app, { id: 'kth', kind: 'appt', title: 'KTH meeting', date: '2026-10-21', start: '14:00', end: '16:00', endMode: 'end', travelBefore: 30, travelAfter: 0, repeat: { mode: 'none' } });
+  const c1 = plan(app).tasks.fc.chunks[0];
+  assert.ok(c1.commute, 'placed on the commute'); assert.strictEqual(c1.ds, '2026-10-21');
+  assert.ok(c1.s >= tm('13:30') && c1.e <= tm('14:00'));
+  const tr = day(app, '2026-10-21').blocks.find((b) => b.type === 'travel' && b.meta.itemId === 'kth');
+  assert.strictEqual(tr.meta.commute.itemId, 'fc');
+  assert.ok(r.moved.some((m) => m.itemId === 'fc' && m.how === 'commute'));
+  assert.deepStrictEqual(overlaps(day(app, '2026-10-21').blocks), []);
+  // routine Swedish (listening / reading) also uses a commute when the same day has no free slot
+  const app2 = loadApp();
+  const r2 = addAppt(app2, { id: 'doc', kind: 'appt', title: 'Doctor', date: '2026-10-21', start: '09:00', end: '17:00', endMode: 'end', travelBefore: 0, travelAfter: 20, repeat: { mode: 'none' } });
+  assert.ok(r2.moved.some((m) => m.type === 'swedish' && m.how === 'commute' && m.ds === '2026-10-21'));
+  const tr2 = day(app2, '2026-10-21').blocks.find((b) => b.type === 'travel' && b.meta.itemId === 'doc');
+  assert.strictEqual(tr2.meta.commute.type, 'swedish');
+  assert.deepStrictEqual(overlaps(day(app2, '2026-10-21').blocks), []);
+});
+function crowdedDay() {
+  const app = loadApp();
+  setItems(app, [
+    { id: 'Y', kind: 'task', title: 'Report', deadline: '2026-10-21', effort: 165, splittable: false, priority: 'normal', log: [], createdAt: '1' },
+    { id: 'X', kind: 'task', title: 'Slides', deadline: '2026-10-21', effort: 165, splittable: false, priority: 'normal', log: [], createdAt: '2' }
+  ]);
+  assert.strictEqual(plan(app).tasks.X.placed, 165); assert.strictEqual(plan(app).tasks.Y.placed, 165);
+  const r = addAppt(app, { id: 'cl', kind: 'appt', title: 'Clinic', date: '2026-10-21', start: '13:00', end: '17:00', endMode: 'end', travelBefore: 30, travelAfter: 30, repeat: { mode: 'none' } });
+  return { app, r };
+}
+const noOverlaps = (app, n = 4) => dates('2026-10-21', n).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
+test('clash: what cannot be relocated gets ranked drop / swap / tomorrow options; swap → full replan, no overlaps', () => {
+  const { app, r } = crowdedDay();
+  const u = r.unplaced.find((x) => x.kind === 'task' && x.itemId === 'X');
+  assert.ok(u, 'Slides cannot fit any more'); assert.strictEqual(u.ds, '2026-10-21');
+  const codes = u.suggestions.map((s) => s.code);
+  ['drop', 'swap', 'tomorrow'].forEach((c) => assert.ok(codes.includes(c), c));
+  const scores = u.suggestions.map((s) => s.score); assert.deepStrictEqual(scores, scores.slice().sort((a, b) => a - b), 'ranked');
+  assert.strictEqual(u.suggestions.find((s) => s.code === 'swap').withItem, 'Y');
+  assert.ok(r.dayLists['2026-10-21'].some((x) => x.itemId === 'Y' && x.kind === 'task'), 'day list shows everything planned');
+  assert.ok(r.dayLists['2026-10-21'].some((x) => x.self), 'and the new event itself');
+  noOverlaps(app);
+  // swap: Slides now, Report → tomorrow
+  app.__f = u.suggestions.find((s) => s.code === 'swap');
+  run(app, 'commitPlanChange(() => applyClashFix(__f), "cl", { clashOf: "cl", silent: true })');
+  const p = plan(app);
+  assert.strictEqual(p.tasks.X.placed, 165); assert.strictEqual(p.tasks.X.chunks[0].ds, '2026-10-21');
+  assert.strictEqual(p.tasks.Y.placed, 165); assert.strictEqual(p.tasks.Y.chunks[0].ds, '2026-10-22');
+  assert.strictEqual(run(app, "itemById('Y').deadline"), '2026-10-22');
+  noOverlaps(app);
+});
+test('clash: drop option and dropping from the full day list both replan the whole schedule with no overlaps', () => {
+  let { app, r } = crowdedDay();
+  app.__f = r.unplaced.find((x) => x.itemId === 'X').suggestions.find((s) => s.code === 'drop');
+  run(app, 'commitPlanChange(() => applyClashFix(__f), "cl", { clashOf: "cl", silent: true })');
+  assert.ok(!run(app, "itemById('X')")); assert.strictEqual(plan(app).tasks.X, undefined);
+  assert.ok(!plan(app).warnings.some((w) => w.t === 'overflow')); noOverlaps(app);
+  // move to tomorrow
+  ({ app, r } = crowdedDay());
+  app.__f = r.unplaced.find((x) => x.itemId === 'X').suggestions.find((s) => s.code === 'tomorrow');
+  run(app, 'commitPlanChange(() => applyClashFix(__f), "cl", { clashOf: "cl", silent: true })');
+  assert.strictEqual(plan(app).tasks.X.chunks[0].ds, '2026-10-22'); noOverlaps(app);
+  // pick freely from the day list: drop Report's time that day + the job-applications block → Slides fits that day
+  ({ app, r } = crowdedDay());
+  const pick = r.dayLists['2026-10-21'].filter((x) => x.type === 'jobs' || x.itemId === 'Y');
+  assert.ok(pick.some((x) => x.kind === 'routine') && pick.some((x) => x.kind === 'task'));
+  app.__l = pick;
+  const res = run(app, 'commitPlanChange(() => applyDayDrops(__l), "cl", { clashOf: "cl", silent: true })');
+  assert.ok(!day(app, '2026-10-21').blocks.some((b) => b.type === 'jobs' || b.meta.itemId === 'Y'));
+  assert.ok(day(app, '2026-10-22').blocks.some((b) => b.type === 'jobs'), 'routine dropped only that day');
+  const p = plan(app); assert.strictEqual(p.tasks.X.placed, 165); assert.strictEqual(p.tasks.X.chunks[0].ds, '2026-10-21');
+  assert.ok(p.warnings.some((w) => w.t === 'overflow' && w.item === 'Y'), 'dropped task is flagged, not silently lost');
+  assert.ok(res.clash.days.includes('2026-10-21'));
+  noOverlaps(app);
+  // Undo brings the previous plan back
+  app.__snap = res.snap; run(app, 'restoreSnapshot(__snap)');
+  assert.ok(day(app, '2026-10-21').blocks.some((b) => b.meta.itemId === 'Y'));
+  assert.ok(day(app, '2026-10-21').blocks.some((b) => b.type === 'jobs'));
+});
+test('random v4.3 scenarios: repeating appointments, commute tasks, moved/skipped tasks, day drops → never any overlap', () => {
+  const R = rng(20261021); const pick = (arr) => arr[Math.floor(R() * arr.length)];
+  for (let n = 0; n < 30; n++) {
+    const app = loadApp(); const days = dates('2026-10-21', 14); const items = [];
+    for (let i = 0; i < 3; i++) {
+      const st = 6 * 60 + Math.floor(R() * 60) * 15; const rep = pick(['none', 'weekly', 'dates']);
+      items.push({ id: 'r' + i, kind: 'appt', title: 'R' + i, date: pick(days.slice(0, 5)), start: P.hm(Math.min(22 * 60, st)), duration: pick([30, 60, 120]), travelBefore: pick([0, 20, 40]), travelAfter: pick([0, 30]),
+        repeat: rep === 'weekly' ? { mode: 'weekly', days: [pick([1, 2, 3, 4, 5]), pick([0, 6, 3])], count: pick([0, 3, 6]) } : rep === 'dates' ? { mode: 'dates', dates: [pick(days), pick(days), pick(days)] } : { mode: 'none' }, skip: [], overrides: {} });
+    }
+    for (let i = 0; i < 4; i++) items.push({ id: 't' + i, kind: 'task', title: 'T' + i, deadline: pick(days), effort: pick([30, 60, 120, 240]), splittable: R() < 0.5, chunk: 60, priority: pick(['high', 'normal', 'low']), commute: R() < 0.5, log: [], createdAt: String(i), skipDays: R() < 0.3 ? [pick(days)] : [], ...(R() < 0.2 ? { notBefore: pick(days) } : {}) });
+    setItems(app, items);
+    if (R() < 0.5) { app.__d = pick(days); run(app, "MM.state.dayDrops[__d] = ['jobs', 'lunch', 'deep']; MM.rev++;"); }
+    const p = plan(app);
+    days.forEach((ds) => {
+      const d = day(app, ds);
+      const bad = overlaps(d.blocks).filter(([x, y]) => !(isFixedItem(x) && isFixedItem(y) && x.meta.itemId !== y.meta.itemId));
+      assert.deepStrictEqual(bad.map(([x, y]) => `${ds} ${x.id} × ${y.id}`), []);
+      d.blocks.filter((b) => b.meta && b.meta.kind === 'task' && b.meta.doneChunk == null).forEach((b) => {
+        const it = items.find((x) => x.id === b.meta.itemId);
+        assert.ok(ds <= it.deadline && !(it.skipDays || []).includes(ds) && (!it.notBefore || ds >= it.notBefore));
+      });
+    });
+    items.filter((x) => x.kind === 'task').forEach((it) => { const inf = p.tasks[it.id]; assert.ok(inf.placed <= it.effort); if (inf.placed < it.effort) assert.ok(p.warnings.some((w) => w.t === 'overflow' && w.item === it.id)); });
+  }
 });

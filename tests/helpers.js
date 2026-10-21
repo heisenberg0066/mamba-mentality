@@ -15,7 +15,7 @@ function loadApp(fakeNow) {
   };
   ctx.window = ctx; ctx.globalThis = ctx; ctx.addEventListener = () => {};
   vm.createContext(ctx);
-  ['data', 'i18n', 'i18n-v2', 'storage', 'ics', 'prayertimes', 'planner', 'core', 'calendar', 'items', 'tabs-study', 'notes', 'tabs-life']
+  ['data', 'i18n', 'i18n-v2', 'storage', 'ics', 'prayertimes', 'planner', 'core', 'calendar', 'items', 'clash', 'tabs-study', 'notes', 'tabs-life']
     .forEach((f) => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), ctx, { filename: f + '.js' }));
   vm.runInContext('MM.state = mmDefaultState(); window.MM = MM;', ctx);
   ctx.store = store;

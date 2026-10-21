@@ -1,4 +1,4 @@
-/* Mamba Mentality v4.1 — planner.
+/* Mamba Mentality v4.3 — planner.
  * Fits fixed appointments (with travel buffers) and deadline tasks into the daily routine
  * WITHOUT double-booking. Pure: no DOM, no global state (works in the browser and in Node tests).
  *
@@ -11,6 +11,9 @@
  *           (cheapest first); displaced minutes are moved to the next real free slot (same day or up to
  *           2 days later), shortened to fit, or dropped — never overlapped.
  * Sleep (00:00–06:00) is never used; prayer times reserve a 15-minute window for anything newly placed.
+ * v4.3: repeating appointments (weekly / specific dates, per-occurrence edits + skips) are expanded into
+ *       fixed occurrences; commute-suitable work (Swedish listening/reading, tasks flagged `commute`) may use
+ *       the travel time of an appointment; tasks honour `notBefore` / `skipDays` (move-to-tomorrow, swap).
  */
 (function (G) {
   const DAY_START = 360, DAY_END = 1440, STEP = 15, PRAYER_MIN = 15, MIN_PIECE = 30, CARRY_DAYS = 2, ESS_RANGE = 180;
@@ -45,6 +48,39 @@
     const tb = Math.max(0, Number(it.travelBefore) || 0), ta = Math.max(0, Number(it.travelAfter) || 0);
     return { s, e, bs: Math.max(0, s - tb), be: Math.min(1440, e + ta) };
   }
+  const isDs = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  const dowOf = (ds) => new Date(ds + 'T12:00:00Z').getUTCDay();
+  /** Occurrences of an appointment in [from, to] (a plain appointment is its own single occurrence). */
+  function occurrences(it, from, to) {
+    if (!it || it.kind !== 'appt') return [];
+    const r = it.repeat;
+    if (!r || !r.mode || r.mode === 'none') return it.date && it.date >= from && it.date <= to ? [it] : [];
+    let dates = [];
+    if (r.mode === 'dates') dates = Array.from(new Set((r.dates || []).filter(isDs))).sort();
+    else if (r.mode === 'weekly' && isDs(it.date)) {
+      const wd = (Array.isArray(r.days) && r.days.length ? r.days : [dowOf(it.date)]).map(Number);
+      const until = isDs(r.until) ? r.until : '9999-12-31'; const max = Math.max(0, Number(r.count) || 0);
+      let n = 0;
+      for (let d = it.date; d <= until && d <= to; d = addDays(d, 1)) {
+        if (!wd.includes(dowOf(d))) continue;
+        n++; if (max && n > max) break;
+        dates.push(d);
+      }
+    }
+    const skip = new Set(it.skip || []); const ovr = it.overrides || {};
+    const out = [];
+    dates.forEach((ds) => {
+      if (skip.has(ds)) return;
+      const o = ovr[ds] || {};
+      const occ = { ...it, ...o, id: it.id, kind: 'appt', date: isDs(o.date) ? o.date : ds, occ: ds, seriesId: it.id, done: !!(o.done || it.done) };
+      delete occ.repeat; delete occ.overrides; delete occ.skip;
+      if (occ.date >= from && occ.date <= to) out.push(occ);
+    });
+    return out;
+  }
+  /** All dates a (repeating) appointment occurs on, limited to [from, to]. */
+  function occurrenceDates(it, from, to) { return occurrences(it, from, to).map((o) => o.date); }
+  function isCommuteBlock(b) { return !!b && (b.type === 'swedish' || !!(b.meta && b.meta.commute === true)); }
   function taskRemaining(it) { return Math.max(0, (Number(it.effort) || 0) - (it.log || []).reduce((a, l) => a + (te(l.end) - tm(l.start)), 0)); }
 
   /**
@@ -115,14 +151,23 @@
 
     // ---------- 1. fixed things: appointments (+travel) and completed task chunks ----------
     const apptsByDay = {};
+    const occs = [];
     items.forEach((it) => {
-      if (it.kind === 'appt' && it.date) (apptsByDay[it.date] = apptsByDay[it.date] || []).push({ it, T: apptTimes(it) });
-      if (it.kind === 'appt' && it.date && days[it.date]) {
+      if (it.kind !== 'appt') return;
+      if (!it.repeat || !it.repeat.mode || it.repeat.mode === 'none') { if (it.date) occs.push(it); return; }
+      occurrences(it, '0000-01-01', ctx.to).forEach((o) => occs.push(o));
+    });
+    occs.forEach((it) => {
+      (apptsByDay[it.date] = apptsByDay[it.date] || []).push({ it, T: apptTimes(it) });
+      if (days[it.date]) {
         const day = days[it.date]; const T = apptTimes(it);
-        if (T.bs < T.s) addHard(day, { id: 'item-' + it.id + '-tb', type: 'travel', labelKey: 'blockTravel', _s: T.bs, _e: T.s, meta: { itemId: it.id, kind: 'travel', detail: it.title || '' } });
-        addHard(day, { id: 'item-' + it.id, type: 'appt', title: it.title || '', notes: it.notes || '', _s: T.s, _e: T.e, meta: { itemId: it.id, kind: 'appt', detail: it.notes || '' }, status: it.done ? 'done' : '' });
-        if (T.be > T.e) addHard(day, { id: 'item-' + it.id + '-ta', type: 'travel', labelKey: 'blockTravel', _s: T.e, _e: T.be, meta: { itemId: it.id, kind: 'travel', detail: it.title || '' } });
+        const om = it.seriesId ? { occ: it.occ, series: true } : {};
+        if (T.bs < T.s) addHard(day, { id: 'item-' + it.id + '-tb', type: 'travel', labelKey: 'blockTravel', _s: T.bs, _e: T.s, meta: { itemId: it.id, kind: 'travel', detail: it.title || '', ...om } });
+        addHard(day, { id: 'item-' + it.id, type: 'appt', title: it.title || '', notes: it.notes || '', _s: T.s, _e: T.e, meta: { itemId: it.id, kind: 'appt', detail: it.notes || '', ...om }, status: it.done ? 'done' : '' });
+        if (T.be > T.e) addHard(day, { id: 'item-' + it.id + '-ta', type: 'travel', labelKey: 'blockTravel', _s: T.e, _e: T.be, meta: { itemId: it.id, kind: 'travel', detail: it.title || '', ...om } });
       }
+    });
+    items.forEach((it) => {
       if (it.kind === 'task') (it.log || []).forEach((l, i) => {
         if (!days[l.ds]) return;
         addHard(days[l.ds], { id: 'item-' + it.id + '-d' + i, type: 'task', title: it.title || '', _s: tm(l.start), _e: te(l.end), meta: { itemId: it.id, kind: 'task', doneChunk: i }, status: 'done' });
@@ -169,7 +214,25 @@
     const open = items.filter((it) => it.kind === 'task' && !it.done && taskRemaining(it) > 0)
       .sort((a, b) => (a.deadline || '9999') < (b.deadline || '9999') ? -1 : (a.deadline || '9999') > (b.deadline || '9999') ? 1
         : (PRIO[a.priority] ?? 1) - (PRIO[b.priority] ?? 1) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-    function taskDays(it) { return order.filter((d) => d >= eligibleStart && d <= (it.deadline || d) && !days[d].isRest); }
+    function taskDays(it) {
+      const skip = new Set(it.skipDays || []);
+      return order.filter((d) => d >= eligibleStart && d <= (it.deadline || d) && !days[d].isRest && !skip.has(d) && (!it.notBefore || d >= it.notBefore));
+    }
+    // a free stretch of an appointment's travel time (commute) — for light work you can do on the go
+    function commuteSlot(day, want, minLen) {
+      let best = null;
+      day.blocks.forEach((b) => {
+        if (b.type !== 'travel' || !b._hard || (b.meta && b.meta.commute)) return;
+        const segs = subtract(Math.max(b._s, DAY_START, day.minStart), b._e, day.pray);
+        segs.forEach(([x, y]) => { const len = Math.min(want, y - x); if (len >= minLen && (!best || len > best.e - best.s)) best = { b, s: x, e: x + len }; });
+      });
+      return best;
+    }
+    function findCommute(dlist, want, minLen) {
+      for (const d of dlist) { const c = commuteSlot(days[d], want, minLen); if (c) return { ...c, ds: d }; }
+      return null;
+    }
+    function useCommute(c, what) { c.b.meta = { ...(c.b.meta || {}), commute: { ...what, s: hm(c.s), e: hm(c.e) } }; }
     function findSlot(dlist, len, mode) {
       let best = null;
       for (const d of dlist) {
@@ -194,6 +257,15 @@
         if (it.splittable && rem - size > 0 && rem - size < MIN_PIECE) size = rem;
         let slot = findSlot(dlist, size, 'replace');
         if (!slot && it.splittable) for (let z = size - STEP; z >= Math.min(MIN_PIECE, rem) && !slot; z -= STEP) { slot = findSlot(dlist, z, 'replace'); }
+        if (it.commute) { // same-day free time first, then the commute, before pushing routine work aside or using a later day
+          const c = findCommute(dlist, it.splittable ? size : rem, it.splittable ? Math.min(15, rem) : rem);
+          if (c && (!slot || c.ds < slot.ds || (c.ds === slot.ds && slot.cost > 0))) {
+            useCommute(c, { kind: 'task', itemId: it.id, title: it.title || '', type: 'task' });
+            log.push({ t: 'placed', item: it.id, title: it.title || '', type: 'task', ds: c.ds, s: c.s, e: c.e, commute: true });
+            info.chunks.push({ ds: c.ds, s: c.s, e: c.e, commute: true });
+            const L = c.e - c.s; rem -= L; placed += L; continue;
+          }
+        }
         if (!slot) break;
         const day = days[slot.ds];
         carve(day, slot.s, slot.e, it.id);
@@ -242,6 +314,7 @@
     // ---------- 5. re-home displaced flexible work into real free time (same day → up to 2 days later) ----------
     pending.sort((a, b) => (a.homeDs < b.homeDs ? -1 : a.homeDs > b.homeDs ? 1 : (b.w - a.w) || (a.fromS - b.fromS)));
     const usedIds = {};
+    const ref = (p) => ({ blockId: p.block.id, baseId: (p.block.meta && p.block.meta.baseId) || String(p.block.id).split('~')[0], detail: (p.block.meta && p.block.meta.detail) || '', queueId: p.queue ? p.queue.id : undefined });
     pending.forEach((p) => {
       let rem = p.len; let part = 0; const placedParts = [];
       for (let k = 0; k <= CARRY_DAYS && rem > 0; k++) {
@@ -264,11 +337,21 @@
           if (p.queue) { id = 'resched-' + p.queue.id + (part ? '-' + part : ''); meta.rescheduled = true; meta.from = p.queue.originalDate; meta.queueId = p.queue.id; delete meta.auto; }
           day.blocks.push({ ...clone(p.block), id, _s: s, _e: e, meta, status: p.queue ? (p.queue.status || '') : '' });
           placedParts.push({ ds: d, s, e });
-          log.push({ t: 'moved', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, fromDs: p.queue ? p.queue.originalDate : p.homeDs, fromS: p.fromS, fromE: p.fromE, ds: d, s, e, why: p.why });
+          log.push({ t: 'moved', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, fromDs: p.queue ? p.queue.originalDate : p.homeDs, fromS: p.fromS, fromE: p.fromE, ds: d, s, e, why: p.why, ...ref(p) });
           rem -= want; part++;
         }
+        // same day (then each later day): the commute, for work you can do on the go
+        if (rem > 0 && isCommuteBlock(p.block)) {
+          const c = commuteSlot(day, rem, Math.min(15, rem));
+          if (c) {
+            useCommute(c, { kind: 'block', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, detail: (p.block.meta && p.block.meta.detail) || '' });
+            placedParts.push({ ds: d, s: c.s, e: c.e });
+            log.push({ t: 'moved', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, fromDs: p.queue ? p.queue.originalDate : p.homeDs, fromS: p.fromS, fromE: p.fromE, ds: d, s: c.s, e: c.e, why: p.why, commute: true, ...ref(p) });
+            rem -= c.e - c.s;
+          }
+        }
       }
-      if (rem > 0) log.push({ t: placedParts.length ? 'shortened' : 'dropped', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, fromDs: p.homeDs, fromS: p.fromS, fromE: p.fromE, len: p.len - rem, lost: rem, why: p.why });
+      if (rem > 0) log.push({ t: placedParts.length ? 'shortened' : 'dropped', title: p.block.title || '', labelKey: p.block.labelKey, type: p.block.type, fromDs: p.homeDs, fromS: p.fromS, fromE: p.fromE, len: p.len - rem, lost: rem, why: p.why, ...ref(p) });
     });
 
     // ---------- output ----------
@@ -290,7 +373,7 @@
     return (after || []).filter((x) => { const k = key(x); if (seen[k]) { seen[k]--; return false; } return true; });
   }
 
-  const API = { buildPlan, diffLogs, apptTimes, taskRemaining, addDays, tm, te, hm, ov, FLEX_W, DAY_START, PRAYER_MIN, MIN_PIECE };
+  const API = { buildPlan, diffLogs, apptTimes, taskRemaining, occurrences, occurrenceDates, isCommuteBlock, addDays, tm, te, hm, ov, FLEX_W, DAY_START, PRAYER_MIN, MIN_PIECE };
   G.MMPlanner = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

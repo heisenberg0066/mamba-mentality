@@ -2,7 +2,7 @@
 function openBlockSheet(ds, blockId, presetStart) {
   const day = getDay(ds);
   const existing = day.blocks.find((b) => b.id === blockId);
-  if (existing && existing.meta && existing.meta.itemId) { openItemSheet(existing.meta.itemId); return; }
+  if (existing && existing.meta && existing.meta.itemId) { openItemSheet(existing.meta.itemId, existing.meta.occ); return; }
   const isNew = !existing;
   const st0 = presetStart || '10:00';
   const b = existing ? clone(existing) : { id: mmUid('b'), type: 'other', start: st0, end: fromMin(toMin(st0) + 60), notes: '', link: '', subtasks: [], meta: {} };
@@ -19,7 +19,7 @@ function openBlockSheet(ds, blockId, presetStart) {
       <label class="field">${esc(t('end'))}<input type="time" id="bs-end" value="${esc(b.end)}" step="300"></label></div>
     <label class="field">${esc(t('type'))}<select id="bs-type">${typeOpts}</select></label>
     ${auto ? `<div class="auto-note">🤖 ${esc(t('autoMoved'))}${b.meta.movedFrom ? ` · ← ${esc(fmtDay(b.meta.movedFrom))} ${esc(b.meta.movedFromTime || '')}` : ''}</div>` : ''}
-    ${b.meta.detail ? `<div class="detail-chip">📌 ${esc(b.meta.detail)}</div>` : ''}
+    ${b.meta.detail ? `<div class="detail-chip">📌 ${esc(b.meta.detail)}${unitChip(b)}</div>` : ''}
     <label class="field">${esc(t('notes'))}<textarea id="bs-notes">${esc(b.notes || '')}</textarea></label>
     <label class="field">${esc(t('link'))}<input type="url" id="bs-link" value="${esc(b.link || '')}" placeholder="https://"></label>
     ${b.link ? `<a class="link" href="${esc(b.link)}" target="_blank" rel="noopener">↗ ${esc(b.link)}</a>` : ''}
@@ -48,11 +48,70 @@ function openBlockSheet(ds, blockId, presetStart) {
     };
     const del = $('#bs-del', root);
     if (del) del.onclick = () => { if (confirm(t('confirmDelete'))) { deleteBlock(ds, b, scope); close(); toast(t('deleted')); render(); } };
-    const dn = $('#bs-done', root); if (dn) dn.onclick = () => { setStatus(ds, existing, 'done'); close(); render(); };
+    const dn = $('#bs-done', root); if (dn) dn.onclick = () => { close(); markDone(ds, existing); };
     const ms = $('#bs-missed', root); if (ms) ms.onclick = () => { setStatus(ds, existing, 'missed'); close(); render(); };
   });
 }
 
+/* ---------- v4.3 real progress ---------- */
+function fmtUnits(n) {
+  n = Math.round((Number(n) || 0) * 100) / 100; const w = Math.floor(n + 1e-9); const f = Math.round((n - w) * 100) / 100;
+  const g = { 0.25: '¼', 0.5: '½', 0.75: '¾' }[f];
+  if (g) return (w ? String(w) : '') + g;
+  return f ? String(n).replace(/\.?0+$/, '') : String(w);
+}
+function uH(n) { return `<bdi dir="ltr">${esc(fmtUnits(n))}</bdi>`; }
+function unitName(stream, n) { return t(stream === 'sw' ? (n === 1 ? 'unitChapter' : 'unitChapters') : (n === 1 ? 'unitTopic' : 'unitTopics')); }
+function unitChip(b) {
+  const m = b.meta || {}; const st = streamOf(b.type); if (!st) return '';
+  if (m.doneUnits != null) return ` <span class="u-chip done">✓ ${uH(m.doneUnits)}</span>`;
+  return m.units ? ` <span class="u-chip">≈ ${uH(Math.max(0.25, Math.round(m.units * 4) / 4))}${m.unitInto > 0.01 ? ` · ↻ ${uH(Math.round(m.unitInto * 4) / 4)}` : ''}</span>` : '';
+}
+function commuteText(b) {
+  const c = b.meta && b.meta.commute; if (!c || typeof c !== 'object') return '';
+  return ` · 🎧 ${c.title || (c.labelKey ? t(c.labelKey) : t('type_' + (c.type || 'other')))}`;
+}
+/** ✓ on a block: study blocks ask how much you really finished first. */
+function markDone(ds, b) {
+  if (streamOf(b.type) && b.status !== 'done') { openProgressSheet(ds, b); return; }
+  setStatus(ds, b, 'done'); render();
+}
+function openProgressSheet(ds, b) {
+  const stream = streamOf(b.type); const u = blockUnits(ds, b);
+  const planned = Math.max(0.25, Math.round(u.amount * 4) / 4);
+  const q = streamQueue(stream); const head = q[0];
+  const quick = [0.5, 1, 1.5, 2, 2.5, 3];
+  const chips = (quick.includes(planned) ? quick : [planned].concat(quick)).map((v) => `<button type="button" class="u-btn ${v === planned ? 'on' : ''}" data-u="${v}">${uH(v)}${v === planned ? `<small>${esc(t('progPlanned'))}</small>` : ''}</button>`).join('');
+  const headPart = head ? Number(head.obj.part) || 0 : 0;
+  openSheet(t('progTitle'), `<div class="stack prog">
+    <div class="sheet-meta"><span class="dot-lg ev-${esc(b.type)}"></span>${esc(blockTitle(b))} · ${esc(fmtDay(ds))} ${b.start}–${b.end}</div>
+    ${head ? `<div class="prog-now"><div class="muted small">${esc(t('progWhere'))}</div><b>${esc(head.label)}</b>
+      <div class="progress thin"><span style="width:${Math.round(headPart * 100)}%"></span></div>${headPart ? `<div class="muted small">${uH(Math.round(headPart * 4) / 4)} ${esc(t('progAlready'))}</div>` : ''}</div>` : ''}
+    <div class="field-label">${esc(t('progHowMuch'))} <span class="muted">(${esc(unitName(stream, 2))})</span></div>
+    <div class="u-grid">${chips}</div>
+    <label class="field">${esc(t('progCustom'))}<input type="number" id="pg-custom" min="0" max="20" step="0.25" inputmode="decimal" placeholder="${esc(fmtUnits(planned))}"></label>
+    <div class="prog-preview" id="pg-prev"></div>
+    <button class="btn primary block" id="pg-save">✓ ${esc(t('progSave'))}</button>
+    <p class="muted small">${esc(t('progHint'))}</p></div>`, (root, close) => {
+    let val = planned;
+    const upd = () => {
+      $$('.u-btn', root).forEach((x) => x.classList.toggle('on', Number(x.dataset.u) === val));
+      const pv = previewProgress(stream, val); const d = Math.round((val - u.amount) * 4) / 4;
+      const tag = d > 0 ? `<span class="pv-tag ahead">⏩ <bdi dir="ltr">+${esc(fmtUnits(d))}</bdi> · ${esc(t('progAhead'))}</span>` : d < 0 ? `<span class="pv-tag behind">↻ <bdi dir="ltr">−${esc(fmtUnits(-d))}</bdi> · ${esc(t('progBehind'))}</span>` : `<span class="pv-tag on">✓ ${esc(t('progOnPlan'))}</span>`;
+      $('#pg-prev', root).innerHTML = `${tag}<div class="small" style="margin-top:6px">${esc(t('progNext'))}: <b>${pv.next ? esc(pv.next.label) : esc(t('progAllDone'))}</b>${pv.next && pv.nextInto > 0.01 ? ` <span class="muted">(${uH(Math.round(pv.nextInto * 4) / 4)} ${esc(t('progAlready'))})</span>` : ''}</div>`;
+      $('#pg-save', root).innerHTML = `✓ ${esc(t('progSave'))} · ${uH(val)} ${esc(unitName(stream, val))}`;
+    };
+    $$('.u-btn', root).forEach((x) => { x.onclick = () => { val = Number(x.dataset.u); $('#pg-custom', root).value = ''; upd(); }; });
+    $('#pg-custom', root).oninput = (e) => { const v = Number(String(e.target.value).replace(',', '.')); if (e.target.value !== '' && v >= 0 && v <= 20) { val = Math.round(v * 100) / 100; upd(); } };
+    upd();
+    $('#pg-save', root).onclick = () => {
+      recordProgress(ds, b, val); close();
+      const d = val - u.amount;
+      toast(d > 0.12 ? t('progToastAhead') : d < -0.12 ? t('progToastBehind') : t('progToastOn'));
+      render();
+    };
+  });
+}
 function layoutColumns(blocks) {
   const items = blocks.map((b) => ({ b, s: toMin(b.start), e: endMin(b.end), col: 0, cols: 1 }));
   const groups = []; let cur = []; let curEnd = -1;
@@ -109,7 +168,7 @@ function eventHtml(it, px, ds, compact) {
   const cls = ['ev', 'ev-' + b.type, b.status ? 'st-' + b.status : '', b.meta && b.meta.rescheduled ? 'resched' : '', compact ? 'compact' : ''].join(' ');
   const mark = b.status === 'done' ? '✓ ' : b.status === 'missed' ? '↻ ' : '';
   return `<button class="${cls}" data-ev="${esc(b.id)}" data-date="${ds}" style="top:${top}px;height:${h}px;inset-inline-start:calc(${left}% + 1px);width:calc(${w}% - 3px)">
-    <span class="ev-title">${mark}${esc(blockTitle(b))}</span>
+    <span class="ev-title">${mark}${esc(blockTitle(b))}${commuteText(b)}</span>
     ${!compact && h > 34 ? `<span class="ev-time">${b.start} – ${b.end}</span>` : ''}
     ${!compact && h > 52 && b.meta && b.meta.detail ? `<span class="ev-detail">${esc(b.meta.detail)}</span>` : ''}</button>`;
 }
@@ -150,7 +209,7 @@ function renderMonthView(ds) {
   const sel = getDay(ds);
   h += `</div><div class="mo-list"><div class="day-head">${esc(longDayName(dow(ds)))} ${ds}</div>${sel.blocks.map((b) => `
     <button class="mo-item" data-ev="${esc(b.id)}" data-date="${ds}"><i class="bar ev-${b.type}"></i>
-      <span class="mo-item-main"><b>${b.status === 'done' ? '✓ ' : ''}${esc(blockTitle(b))}</b>${b.meta && b.meta.detail ? `<small>${esc(b.meta.detail)}</small>` : ''}</span>
+      <span class="mo-item-main"><b>${b.status === 'done' ? '✓ ' : ''}${esc(blockTitle(b))}${commuteText(b)}</b>${b.meta && b.meta.detail ? `<small>${esc(b.meta.detail)}</small>` : ''}</span>
       <span class="mo-item-time">${b.start}<br>${b.end}</span></button>`).join('')}</div>`;
   return h;
 }
@@ -158,7 +217,7 @@ function renderListView(ds) {
   const day = getDay(ds);
   return `${weekStrip(ds)}<div class="card">${day.blocks.map((b, i) => `
     <div class="list-block ${b.status ? 'st-' + b.status : ''}"><i class="bar ev-${b.type}"></i>
-      <button class="lb-main" data-ev="${esc(b.id)}" data-date="${ds}"><span class="time">${b.start}–${b.end}</span><b>${esc(blockTitle(b))}</b>${b.meta && b.meta.detail ? `<small>${esc(b.meta.detail)}</small>` : ''}</button>
+      <button class="lb-main" data-ev="${esc(b.id)}" data-date="${ds}"><span class="time">${b.start}–${b.end}</span><b>${esc(blockTitle(b))}${commuteText(b)}</b>${b.meta && b.meta.detail ? `<small>${esc(b.meta.detail)}${unitChip(b)}</small>` : ''}</button>
       ${b.meta && (b.meta.queueId || b.meta.itemId || b.meta.auto) ? '' : `<div class="lb-move"><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(t('moveUp'))}">▲</button><button class="btn sm ghost" data-move="${esc(b.id)}" data-dir="1" ${i === day.blocks.length - 1 ? 'disabled' : ''} aria-label="${esc(t('moveDown'))}">▼</button></div>`}
       <div class="lb-status"><button class="btn sm success ${b.status === 'done' ? 'on' : ''}" data-quick="done" data-id="${esc(b.id)}">✓</button><button class="btn sm danger ${b.status === 'missed' ? 'on' : ''}" data-quick="missed" data-id="${esc(b.id)}">↻</button></div>
     </div>`).join('')}</div>`;
@@ -192,7 +251,8 @@ function renderToday(root) {
   $$('[data-ev]', root).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); openBlockSheet(b.dataset.date, b.dataset.ev); }; });
   $$('[data-move]', root).forEach((b) => { b.onclick = () => { moveBlock(MM.date, b.dataset.move, Number(b.dataset.dir)); render(); }; });
   $$('[data-quick]', root).forEach((b) => { b.onclick = () => {
-    const blk = getDay(MM.date).blocks.find((x) => x.id === b.dataset.id); if (blk) { setStatus(MM.date, blk, b.dataset.quick); render(); }
+    const blk = getDay(MM.date).blocks.find((x) => x.id === b.dataset.id); if (!blk) return;
+    if (b.dataset.quick === 'done') markDone(MM.date, blk); else { setStatus(MM.date, blk, b.dataset.quick); render(); }
   }; });
   const grid = $('.day-grid', root);
   if (grid) grid.addEventListener('click', (e) => {

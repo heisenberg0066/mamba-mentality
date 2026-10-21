@@ -1,4 +1,4 @@
-const VERSION = '4.2.0';
+const VERSION = '4.3.0';
 const CACHE = 'mamba-v' + VERSION;
 const ASSETS = [
   './',
@@ -14,6 +14,7 @@ const ASSETS = [
   './js/core.js?v=' + VERSION,
   './js/calendar.js?v=' + VERSION,
   './js/items.js?v=' + VERSION,
+  './js/clash.js?v=' + VERSION,
   './js/tabs-study.js?v=' + VERSION,
   './js/notes.js?v=' + VERSION,
   './js/tabs-life.js?v=' + VERSION,

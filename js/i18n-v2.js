@@ -254,3 +254,64 @@ Object.assign(MM_I18N.sv, {
   priorityHint: 'Välj prioritet per kurs — planen uppdateras direkt. Bara ”Måste / vill” och ”Snabb genomgång” schemaläggs.',
   interleaveNote: 'Repetition av KFUPM och KTH varvas i planen.', swPrepLink: 'SolidWorks-förberedelse', relatedCourse: 'Relaterad kurs'
 });
+/* v4.3 — real progress, repeating appointments, smarter clash handling */
+Object.assign(MM_I18N.en, {
+  progTitle: 'How much did you finish?', progWhere: 'You were on', progAlready: 'already done', progHowMuch: 'Finished this session',
+  progPlanned: 'planned', progCustom: 'Other amount', progSave: 'Save', progNext: 'Next session starts at', progAllDone: 'everything done 🎉',
+  progAhead: 'ahead — later sessions move up', progBehind: 'the rest goes into the next session', progOnPlan: 'right on plan',
+  progHint: 'Block times stay the same — only what each later session covers shifts, in order.',
+  progToastAhead: 'Nice — next topics pulled forward', progToastBehind: 'Saved — the rest is first in the next session', progToastOn: 'Saved — on plan',
+  unitTopic: 'topic', unitTopics: 'topics / units', unitChapter: 'chapter', unitChapters: 'chapters', partDone: 'done',
+  repeat: 'Repeat', repNone: 'None', repWeekly: 'Weekly', repDates: 'Pick dates', repNever: 'No end', repUntil: 'until', repUntilBtn: 'Until date', repCount: 'Times',
+  repEndDate: 'End date', repTimes: 'Number of times', repDatesHint: 'For appointments whose dates change every month — add each date.',
+  repAddDate: 'Add', repPickDates: 'Add at least one date', repEvery: 'Every', repDatesN: 'dates', repNext: 'next', repNext120: 'in the next 4 months',
+  editOccurrence: 'Repeating appointment', scopeOne: 'This one', scopeSeries: 'Whole series',
+  confirmDeleteOne: 'Delete only this occurrence?', confirmDeleteSeries: 'Delete the whole series?', occDeleted: 'Removed {d} only',
+  commuteOk: 'Can do on the go (reading, flashcards, listening)',
+  clashTitle: 'Clash sorted — please check', clashMoved: 'Moved automatically', clashUnplaced: 'Couldn’t fit — pick an option',
+  clashDayList: 'Everything planned that day', clashDayHint: 'Tick what you want to drop yourself — the plan is rebuilt around it.',
+  how_sameDay: 'same day', how_commute: 'on your commute', how_laterDay: 'later day',
+  bestPick: 'Best', fixTomorrow: 'Move “{x}” to {d}', fixTomorrowExt: 'Move “{x}” to {d} (deadline moves)', fixSwap: 'Swap: “{x}” now, “{y}” → {d}',
+  fixSwapDropped: 'dropped that day', fixSwapRoutine: 'Do “{x}” instead of “{y}”', moreToSort: 'more to sort out', fixDrop: 'Drop “{x}”', fixDropRoutine: 'Skip “{x}” this time',
+  dropThis: 'Drop', dropSelected: 'Drop selected & replan', droppedN: 'Dropped {n}', keptDropped: 'OK — skipped this time', allChanges: 'All changes'
+});
+Object.assign(MM_I18N.ar, {
+  progTitle: 'كم أنجزت فعلاً؟', progWhere: 'كنت عند', progAlready: 'منجز مسبقاً', progHowMuch: 'ما أنجزته في هذه الجلسة',
+  progPlanned: 'المخطط', progCustom: 'كمية أخرى', progSave: 'حفظ', progNext: 'الجلسة التالية تبدأ من', progAllDone: 'أنجزت كل شيء 🎉',
+  progAhead: 'متقدم — الجلسات القادمة تتقدم', progBehind: 'الباقي ينتقل إلى الجلسة التالية', progOnPlan: 'حسب الخطة تماماً',
+  progHint: 'أوقات الكتل لا تتغير — فقط محتوى الجلسات اللاحقة يتقدم بالترتيب.',
+  progToastAhead: 'ممتاز — تقدّمت المواضيع التالية', progToastBehind: 'تم الحفظ — الباقي أول الجلسة التالية', progToastOn: 'تم الحفظ — حسب الخطة',
+  unitTopic: 'موضوع', unitTopics: 'مواضيع / وحدات', unitChapter: 'فصل', unitChapters: 'فصول', partDone: 'منجز',
+  repeat: 'تكرار', repNone: 'بدون', repWeekly: 'أسبوعي', repDates: 'تواريخ محددة', repNever: 'بلا نهاية', repUntil: 'حتى', repUntilBtn: 'حتى تاريخ', repCount: 'عدد المرات',
+  repEndDate: 'تاريخ الانتهاء', repTimes: 'عدد المرات', repDatesHint: 'للمواعيد التي تتغير تواريخها كل شهر — أضف كل تاريخ.',
+  repAddDate: 'إضافة', repPickDates: 'أضف تاريخاً واحداً على الأقل', repEvery: 'كل', repDatesN: 'تواريخ', repNext: 'التالي', repNext120: 'خلال الأشهر الأربعة القادمة',
+  editOccurrence: 'موعد متكرر', scopeOne: 'هذا فقط', scopeSeries: 'كل السلسلة',
+  confirmDeleteOne: 'حذف هذا الموعد فقط؟', confirmDeleteSeries: 'حذف السلسلة كاملة؟', occDeleted: 'حُذف {d} فقط',
+  commuteOk: 'يمكن إنجازه أثناء التنقل (قراءة، بطاقات، استماع)',
+  clashTitle: 'تم حل التعارض — راجع من فضلك', clashMoved: 'نُقل تلقائياً', clashUnplaced: 'لم يتسع — اختر حلاً',
+  clashDayList: 'كل ما هو مخطط في ذلك اليوم', clashDayHint: 'اختر ما تريد إلغاءه بنفسك — ستُعاد الخطة حوله.',
+  how_sameDay: 'نفس اليوم', how_commute: 'أثناء التنقل', how_laterDay: 'يوم لاحق',
+  bestPick: 'الأفضل', fixTomorrow: 'انقل «{x}» إلى {d}', fixTomorrowExt: 'انقل «{x}» إلى {d} (يتغير الموعد النهائي)', fixSwap: 'تبديل: «{x}» الآن، «{y}» ← {d}',
+  fixSwapDropped: 'يُلغى ذلك اليوم', fixSwapRoutine: 'اعمل «{x}» بدلاً من «{y}»', moreToSort: 'عناصر أخرى تحتاج قراراً', fixDrop: 'ألغِ «{x}»', fixDropRoutine: 'تخطَّ «{x}» هذه المرة',
+  dropThis: 'إلغاء', dropSelected: 'ألغِ المحدد وأعد التخطيط', droppedN: 'أُلغي {n}', keptDropped: 'حسناً — تم التخطي هذه المرة', allChanges: 'كل التغييرات'
+});
+Object.assign(MM_I18N.sv, {
+  progTitle: 'Hur mycket hann du?', progWhere: 'Du var på', progAlready: 'redan klart', progHowMuch: 'Klart det här passet',
+  progPlanned: 'planerat', progCustom: 'Annat antal', progSave: 'Spara', progNext: 'Nästa pass börjar på', progAllDone: 'allt klart 🎉',
+  progAhead: 'före — senare pass flyttas fram', progBehind: 'resten läggs i nästa pass', progOnPlan: 'precis enligt plan',
+  progHint: 'Blockens tider ändras inte — bara vad de senare passen tar upp flyttas, i ordning.',
+  progToastAhead: 'Snyggt — nästa ämnen flyttade fram', progToastBehind: 'Sparat — resten först i nästa pass', progToastOn: 'Sparat — enligt plan',
+  unitTopic: 'avsnitt', unitTopics: 'avsnitt / enheter', unitChapter: 'kapitel', unitChapters: 'kapitel', partDone: 'klart',
+  repeat: 'Upprepa', repNone: 'Ingen', repWeekly: 'Varje vecka', repDates: 'Välj datum', repNever: 'Inget slut', repUntil: 'till', repUntilBtn: 'Till datum', repCount: 'Antal',
+  repEndDate: 'Slutdatum', repTimes: 'Antal gånger', repDatesHint: 'För tider vars datum ändras varje månad — lägg till varje datum.',
+  repAddDate: 'Lägg till', repPickDates: 'Lägg till minst ett datum', repEvery: 'Varje', repDatesN: 'datum', repNext: 'nästa', repNext120: 'de närmaste 4 månaderna',
+  editOccurrence: 'Återkommande tid', scopeOne: 'Bara denna', scopeSeries: 'Hela serien',
+  confirmDeleteOne: 'Ta bara bort detta tillfälle?', confirmDeleteSeries: 'Ta bort hela serien?', occDeleted: 'Bara {d} borttagen',
+  commuteOk: 'Går att göra på resan (läsa, flashcards, lyssna)',
+  clashTitle: 'Krocken löst — kolla gärna', clashMoved: 'Flyttat automatiskt', clashUnplaced: 'Fick inte plats — välj ett alternativ',
+  clashDayList: 'Allt som är planerat den dagen', clashDayHint: 'Bocka för det du själv vill stryka — planen byggs om runt det.',
+  how_sameDay: 'samma dag', how_commute: 'på resan', how_laterDay: 'senare dag',
+  bestPick: 'Bäst', fixTomorrow: 'Flytta ”{x}” till {d}', fixTomorrowExt: 'Flytta ”{x}” till {d} (deadline flyttas)', fixSwap: 'Byt: ”{x}” nu, ”{y}” → {d}',
+  fixSwapDropped: 'stryks den dagen', fixSwapRoutine: 'Gör ”{x}” i stället för ”{y}”', moreToSort: 'till att ta ställning till', fixDrop: 'Stryk ”{x}”', fixDropRoutine: 'Hoppa över ”{x}” den här gången',
+  dropThis: 'Stryk', dropSelected: 'Stryk valda & planera om', droppedN: '{n} strukna', keptDropped: 'OK — hoppar över den här gången', allChanges: 'Alla ändringar'
+});
