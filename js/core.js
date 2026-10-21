@@ -67,27 +67,28 @@ function coursePace(c) {
   const w = Math.max(1 / 7, (new Date(c.deadline + 'T23:59:59') - new Date()) / (7 * 864e5));
   return (courseLeft(c) / w).toFixed(1);
 }
-function sortedRevision() { // courses to revise (high, quick), in list order — KFUPM and KTH MSc alike
-  const pr = { high: 0, quick: 1 };
-  return MM.state.courses.filter((x) => mmIsScheduled(x) && courseLeft(x) > 0)
-    .sort((a, b) => pr[a.priority] - pr[b.priority] || MM.state.courses.indexOf(a) - MM.state.courses.indexOf(b));
-}
+/** v4.5: courses still to revise, in the strict course order (see mmCourseOrder in storage.js). */
+function sortedRevision() { return mmCourseOrder(MM.state.courses).filter((x) => courseLeft(x) > 0); }
+/** The current course = the first unfinished one in the order (the order decides, not a manual pick). */
 function activeCourse() {
   const s = MM.state.settings;
-  let c = MM.state.courses.find((x) => x.code === s.activeCourse && courseLeft(x) > 0);
-  if (!c) { c = sortedRevision()[0] || null; if (c && s.activeCourse !== c.code) { s.activeCourse = c.code; persist(); } }
+  const c = sortedRevision()[0] || null;
+  if ((c ? c.code : null) !== (s.activeCourse || null)) s.activeCourse = c ? c.code : null; // saved with the next persist()
   return c;
 }
-/** Interleaved topic order (KFUPM ⇄ KTH MSc), see mmRevisionSequence in storage.js. */
+/** Sequential topic order: one whole course after the other, see mmRevisionSequence in storage.js. */
 function revisionSequence() {
-  const act = activeCourse();
-  const key = MM.rev + '|' + (act ? act.code : '');
-  if (!MM._seq || MM._seq.key !== key || MM._seq.state !== MM.state) MM._seq = { key, state: MM.state, seq: mmRevisionSequence(MM.state.courses, act && act.code) };
+  const key = MM.rev;
+  if (!MM._seq || MM._seq.key !== key || MM._seq.state !== MM.state) MM._seq = { key, state: MM.state, seq: mmRevisionSequence(MM.state.courses) };
   return MM._seq.seq;
 }
-function revisionQueue() { // distinct courses in the order they come up in the interleaved sequence
-  const out = []; revisionSequence().forEach((x) => { if (!out.includes(x.course)) out.push(x.course); });
-  return out;
+function revisionQueue() { return sortedRevision(); } // distinct courses in the order they come up
+/** 'Now: MATH 101 — topic 3/8 · Next: MATH 102' data. */
+function courseNowNext() {
+  const list = sortedRevision(); const now = list[0] || null;
+  if (!now) return null;
+  const idx = now.topics.findIndex((x) => !x.done);
+  return { now, topicNo: idx + 1, topicCount: now.topics.length, topic: now.topics[idx] || null, next: list[1] || null };
 }
 function workDaysBetween(a, b) { let n = 0; for (let d = a; d < b; d = mmAddDays(d, 1)) if (!isRestDay(d)) n++; return n; }
 function planBaseDate() { const ps = planStartDate(); const td = mmTodayStr(); return ps > td ? ps : td; }
@@ -142,22 +143,42 @@ function routineBlocks(ds) { const drop = droppedIds(ds); return baseBlocks(ds).
 const STREAM_TYPES = { rev: ['revision', 'deep'], sw: ['swedish'] };
 function streamOf(type) { return STREAM_TYPES.rev.includes(type) ? 'rev' : STREAM_TYPES.sw.includes(type) ? 'sw' : null; }
 function streamQueue(stream) {
-  if (stream === 'rev') return revisionSequence().map((x) => ({ key: 'tp:' + x.topic.id, obj: x.topic, label: `${x.course.code} — ${x.topic.name}`, course: x.course }));
-  return chapters().filter((c) => !c.done).map((c) => ({ key: 'ch:' + c.id, obj: c, label: `${c.book} · ${c.num}: ${c.title}` }));
+  if (stream === 'rev') return revisionSequence().map((x) => ({ key: 'tp:' + x.topic.id, obj: x.topic, label: `${x.course.code} — ${x.topic.name}`, course: x.course, w: mmTopicWeight(x.course) }));
+  return chapters().filter((c) => !c.done).map((c) => ({ key: 'ch:' + c.id, obj: c, label: `${c.book} · ${c.num}: ${c.title}`, w: 1 }));
 }
 function streamPerDay(stream) {
   if (stream === 'rev') return (PACE_BY_MODE[MM.state.settings.jobMode] || 4) / 6;
   return Math.max(0, Number(swedishStats().pace) || 0) / 6;
 }
 const unitLeft = (o) => Math.max(0, 1 - (Number(o.part) || 0));
-/** Item of the queue at a fractional position (0 = the start of what is left of the first item). */
-function queueAt(queue, pos) {
+const unitW = (x, raw) => (raw ? 1 : x.w || 1);
+/** Item of the queue at a fractional position (0 = the start of what is left of the first item).
+ *  Positions are in study time (1 = one full topic's time; a quick-pass topic takes ½); raw = count in units instead. */
+function queueAt(queue, pos, raw) {
   let acc = 0;
   for (let i = 0; i < queue.length; i++) {
-    const L = unitLeft(queue[i].obj); if (acc + L > pos + 1e-9) return { i, x: queue[i], into: (Number(queue[i].obj.part) || 0) + (pos - acc) };
+    const w = unitW(queue[i], raw); const L = unitLeft(queue[i].obj) * w;
+    if (acc + L > pos + 1e-9) return { i, x: queue[i], into: (Number(queue[i].obj.part) || 0) + (pos - acc) / w };
     acc += L;
   }
   return null;
+}
+/** Units (topics / chapters) covered by the time span [pos, pos + amount] of the queue. */
+function unitsInSpan(queue, pos, amount) {
+  let acc = 0; let n = 0; const end = pos + amount;
+  for (const x of queue) {
+    const w = unitW(x); const L = unitLeft(x.obj) * w; const a = Math.max(acc, pos); const b = Math.min(acc + L, end);
+    if (b > a) n += (b - a) / w;
+    acc += L; if (acc >= end) break;
+  }
+  if (end > acc) n += end - acc; // past the end of the queue: plain time
+  return n;
+}
+/** End positions (study time) of each course run in the revision queue, ascending. */
+function courseBounds(queue) {
+  const out = []; let acc = 0;
+  queue.forEach((x, i) => { acc += unitLeft(x.obj) * unitW(x); if (!queue[i + 1] || queue[i + 1].course !== x.course) out.push(acc); });
+  return out;
 }
 function progressModel() {
   const key = MM.rev + '|' + mmTodayStr();
@@ -175,12 +196,19 @@ function streamDay(stream, ds) {
   const base = planBaseDate();
   const plain = (d) => { const bl = studyBlocks(d, stream); const tot = bl.reduce((a, b) => a + blockMins(b), 0); const u = streamPerDay(stream); const o = {}; bl.forEach((b) => { o[b.id] = { pos: 0, amount: tot ? (u * blockMins(b)) / tot : 0, recorded: false }; }); return o; };
   if (ds < base) return plain(ds);
-  if (!pm[stream]) pm[stream] = { next: base, pos: 0, at: {}, rec: recordedKeys() };
+  if (!pm[stream]) pm[stream] = { next: base, pos: 0, at: {}, rec: recordedKeys(), bounds: stream === 'rev' ? courseBounds(streamQueue('rev')) : null };
   const m = pm[stream];
+  // v4.5: a revision block holds one course only — if a course ends inside a block, that block stops at its end
+  // and the next course starts with the next block (no mixing of courses in one session)
+  const capAt = (pos) => { if (!m.bounds) return Infinity; const e = m.bounds.find((x) => x > pos + 1e-6); return e == null ? Infinity : e; };
   let guard = 0;
   while (m.next <= ds && guard++ < 800) {
     const d = m.next; const day = plain(d);
-    Object.keys(day).forEach((id) => { const x = day[id]; x.pos = m.pos; x.recorded = m.rec.has(d + '|' + id); if (!x.recorded) m.pos += x.amount; });
+    Object.keys(day).forEach((id) => {
+      const x = day[id]; x.pos = m.pos; x.recorded = m.rec.has(d + '|' + id); if (x.recorded) return;
+      const end = capAt(m.pos); if (m.pos + x.amount > end + 1e-6) { x.amount = Math.max(0, end - m.pos); x.capped = true; }
+      m.pos += x.amount;
+    });
     m.at[d] = day; m.next = mmAddDays(d, 1);
   }
   return m.at[ds] || {};
@@ -190,7 +218,9 @@ function blockUnits(ds, b) {
   const home = (b.meta && (b.meta.movedFrom || b.meta.from)) || ds;
   const id = (b.meta && b.meta.baseId) || String(b.id).split('~')[0];
   const x = streamDay(stream, home)[id];
-  return x ? { stream, ...x } : { stream, pos: 0, amount: 0, recorded: false };
+  if (!x) return { stream, pos: 0, amount: 0, time: 0, recorded: false };
+  // amount = units (topics / chapters) planned for the block; time = its share of the study time
+  return { stream, ...x, time: x.amount, amount: x.recorded ? x.amount : unitsInSpan(streamQueue(stream), x.pos, x.amount) };
 }
 function enrich(b, ds) {
   swConvert(b, ds);
@@ -323,7 +353,7 @@ function unitObj(key) {
 }
 /** What happens if `amount` units are recorded now: the item you'd stop at, and how much is consumed. */
 function previewProgress(stream, amount) {
-  const q = streamQueue(stream); const at = queueAt(q, Math.max(0, Number(amount) || 0));
+  const q = streamQueue(stream); const at = queueAt(q, Math.max(0, Number(amount) || 0), true);
   return { from: q[0] || null, next: at ? at.x : null, nextInto: at ? at.into : 0, finished: q.length && !at };
 }
 function recordProgress(ds, b, actual) {

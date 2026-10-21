@@ -1,7 +1,8 @@
-const MM_APP_VERSION = '4.4.0';
+const MM_APP_VERSION = '4.5.0';
 const MM_STORAGE_KEY = 'mamba-mentality-v1'; // same key: v2 migrates in place
-const MM_VERSION = 5; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
+const MM_VERSION = 6; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
                       // v5: real study progress (partial units, progress log), repeating appointments, per-day drops
+                      // v6: strictly sequential course revision (one whole course at a time) — course deadlines re-planned once
 
 function mmUid(p) { return (p || 'id') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function mmTodayStr(d) {
@@ -22,44 +23,69 @@ function mmIsoWeek(d) {
   return x.getUTCFullYear() + '-W' + String(Math.ceil(((x - y0) / 864e5 + 1) / 7)).padStart(2, '0');
 }
 
-const MM_PRIORITIES = ['high', 'quick', 'later', 'ignore']; // high = KEEP; only high + quick are scheduled
+const MM_PRIORITIES = ['high', 'quick', 'later', 'ignore']; // high = KEEP; ignore is never scheduled, later comes after the main run
 const MM_GROUPS = ['kfupm', 'kth'];
 const MM_PACE = { none: 4, 'part-time': 2.5, 'full-time': 1.5 }; // topics / week (same as PACE_BY_MODE)
-function mmIsScheduled(c) { return !!c && (c.priority === 'high' || c.priority === 'quick'); }
+function mmIsScheduled(c) { return !!c && (c.priority === 'high' || c.priority === 'quick' || c.priority === 'later'); }
+/** Time weight of one topic: a quick pass gets half the time of a full topic. */
+function mmTopicWeight(c) { return c && c.priority === 'quick' ? 0.5 : 1; }
 function mmCodeKey(code) { return String(code || '').toUpperCase().replace(/[\s\-_.]/g, ''); }
 function mmCourseGroup(c) { return MM_GROUPS.includes(c && c.group) ? c.group : 'kfupm'; }
 
+/** Course number parts: 'MATH 101' → { pre: 'MATH', num: 101 }, 'SE1025' → { pre: 'SE', num: 1025 }. */
+function mmCodeParts(code) {
+  const m = /^\s*([A-Za-z]+)\s*-?\s*(\d+)/.exec(String(code || ''));
+  return m ? { pre: m[1].toUpperCase(), num: Number(m[2]) } : { pre: String(code || '').toUpperCase(), num: 9999 };
+}
 /**
- * Revision order as a flat list of { course, topic }.
- * Each group (KFUPM, KTH MSc) is its own stream: active course first, then high, then quick, in list order.
- * The streams are interleaved 1:1 topic by topic (the active course's group leads), so KTH and KFUPM
- * revision alternate; when one stream runs out the other simply continues. later / ignore are never scheduled.
+ * v4.5 course order (one whole course at a time).
+ *  KFUPM (high + quick together = the main run): all MATH by number → all PHYS by number → the rest by
+ *  study year (1xx = year 1 … 4xx = year 4), then number, then code. A quick course keeps its year position.
+ *  Then KFUPM 'later' courses (same rule). Then KTH MSc: high → quick → later, each by course code.
+ *  'ignore' is never scheduled.
  */
-function mmRevisionSequence(courses, activeCode) {
-  const list = (courses || []).filter((c) => mmIsScheduled(c) && Array.isArray(c.topics) && c.topics.some((x) => !x.done));
-  const act = list.find((c) => c.code === activeCode) || null;
-  const order = [];
-  if (act) order.push(mmCourseGroup(act));
-  list.forEach((c) => { const g = mmCourseGroup(c); if (!order.includes(g)) order.push(g); });
-  const pr = { high: 0, quick: 1 };
-  const streams = order.map((g) => {
-    const cs = list.filter((c) => mmCourseGroup(c) === g)
-      .sort((a, b) => (a === act ? -1 : b === act ? 1 : 0) || pr[a.priority] - pr[b.priority] || list.indexOf(a) - list.indexOf(b));
-    const out = []; cs.forEach((c) => c.topics.forEach((tp) => { if (!tp.done) out.push({ course: c, topic: tp }); }));
-    return out;
+function mmCourseSortKey(c) {
+  const g = MM_GROUPS.indexOf(mmCourseGroup(c));
+  const { pre, num } = mmCodeParts(c.code);
+  const code = String(c.code || '').toUpperCase();
+  if (mmCourseGroup(c) === 'kfupm') {
+    const tier = c.priority === 'later' ? 1 : 0;
+    const band = pre === 'MATH' ? 0 : pre === 'PHYS' ? 1 : 2;
+    const level = num < 1000 ? Math.floor(num / 100) : 9;
+    return [g, tier, band, level, num, code];
+  }
+  return [g, { high: 0, quick: 1, later: 2 }[c.priority] ?? 3, 0, 0, 0, code];
+}
+function mmCompareKeys(a, b) {
+  for (let i = 0; i < a.length; i++) { if (a[i] < b[i]) return -1; if (a[i] > b[i]) return 1; }
+  return 0;
+}
+/** Every scheduled course (done ones included) in revision order. */
+function mmCourseOrder(courses) {
+  const list = (courses || []).filter((c) => mmIsScheduled(c) && Array.isArray(c.topics));
+  return list.map((c, i) => ({ c, i, k: mmCourseSortKey(c) })).sort((x, y) => mmCompareKeys(x.k, y.k) || x.i - y.i).map((x) => x.c);
+}
+/**
+ * Revision order as a flat list of { course, topic }: strictly one course after the other (mmCourseOrder),
+ * never interleaved. Done topics are skipped, so finished courses/topics stay finished and the sequence starts at the
+ * first unfinished topic of the first unfinished course. Inside a course a topic you already started comes first.
+ * (activeCode is accepted for compatibility and ignored: the order decides.)
+ */
+function mmRevisionSequence(courses) {
+  const seq = [];
+  mmCourseOrder(courses).forEach((c) => {
+    const open = c.topics.filter((x) => !x.done);
+    const part = (x) => Number(x.part) > 0 && Number(x.part) < 1;
+    open.filter(part).concat(open.filter((x) => !part(x))).forEach((tp) => seq.push({ course: c, topic: tp }));
   });
-  const seq = []; const n = Math.max(0, ...streams.map((x) => x.length));
-  for (let i = 0; i < n; i++) streams.forEach((st) => { if (i < st.length) seq.push(st[i]); });
-  // v4.3: a topic you already started (partly done) comes first — the next session starts where you stopped
-  const part = (x) => Number(x.topic.part) > 0 && Number(x.topic.part) < 1;
-  return seq.filter(part).concat(seq.filter((x) => !part(x)));
+  return seq;
 }
 
-/** Default deadlines from the interleaved revision order (topicsPerWeek pace). onlyCodes: limit which courses get one. */
+/** Default deadlines from the sequential revision order (topicsPerWeek pace, quick topics count half). onlyCodes: limit which courses get one. */
 function mmAutoDeadlines(courses, topicsPerWeek, fromDate, activeCode, onlyCodes) {
   const from = fromDate || mmTodayStr(); const pace = Math.max(0.1, Number(topicsPerWeek) || 4);
-  const lastPos = new Map();
-  mmRevisionSequence(courses, activeCode).forEach((x, i) => lastPos.set(x.course, i + 1));
+  const lastPos = new Map(); let acc = 0;
+  mmRevisionSequence(courses).forEach((x) => { acc += mmTopicWeight(x.course) * Math.max(0, 1 - (Number(x.topic.part) || 0)); lastPos.set(x.course, acc); });
   lastPos.forEach((pos, c) => {
     if (onlyCodes && !onlyCodes.includes(c.code)) return;
     c.deadline = mmAddDays(from, Math.max(7, Math.ceil((pos / pace) * 7)));
@@ -194,6 +220,16 @@ function mmMigrate(parsed) {
     s.courses = s.courses.concat(added);
     const td = mmTodayStr(); const from = s.settings.planStart > td ? s.settings.planStart : td;
     mmAutoDeadlines(s.courses, MM_PACE[s.settings.jobMode] || 4, from, s.settings.activeCourse, added.map((c) => c.code));
+  }
+
+  // v6: revision became strictly sequential — re-plan the course deadlines once along the new order (done topics untouched;
+  // the old data is kept in the -backup-v<old> copy by mmLoad)
+  const pv = Number(parsed.version) || 1;
+  if (Array.isArray(parsed.courses) && pv >= 4 && pv < 6) {
+    const td = mmTodayStr(); const from = s.settings.planStart > td ? s.settings.planStart : td;
+    mmAutoDeadlines(s.courses, MM_PACE[s.settings.jobMode] || 4, from);
+    const first = mmRevisionSequence(s.courses)[0];
+    s.settings.activeCourse = first ? first.course.code : null;
   }
 
   // SolidWorks

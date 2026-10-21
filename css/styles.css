@@ -529,3 +529,16 @@ details.clash-sec[open] summary::after{content:' ▴'}
 .sticky.done .note-text{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:rgba(51,48,31,.75)}
 .gone-in{font-weight:600;color:rgba(51,48,31,.8)}
 .notes-hint{margin:2px 6px 0}
+/* v4.5 — course order */
+.now-next{margin:2px 0 6px;line-height:1.5}
+.now-next .nn-now b,.now-next .nn-next b{color:var(--gold,#d4a72c)}
+.now-next .nn-sep{opacity:.5;margin:0 2px}
+.co-list{list-style:none;margin:8px 0 0;padding:0}
+.co-list .co-head{font-size:.8rem;font-weight:600;opacity:.7;margin:12px 0 4px}
+.co-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.co-row .co-n{min-width:22px;text-align:end;opacity:.55;font-variant-numeric:tabular-nums;font-size:.85rem}
+.co-row .co-ic{width:18px;text-align:center}
+.co-row .co-btn{flex:1;min-width:0;text-align:start;background:none;border:0;color:inherit;padding:4px 0;cursor:pointer;font:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.co-row .co-meta{white-space:nowrap}
+.co-row.done{opacity:.5}.co-row.done .co-ic{color:#4caf50}
+.co-row.now{background:rgba(212,167,44,.12);border-radius:8px;padding-inline:4px}.co-row.now .co-ic{color:var(--gold,#d4a72c)}

@@ -319,3 +319,22 @@ Object.assign(MM_I18N.sv, {
 Object.assign(MM_I18N.en, { noteCross: 'Cross out (done)', noteUncross: 'Restore', noteGoneIn: 'disappears in {x}', noteCrossHint: 'Tap ○ or swipe a note sideways to cross it out — it disappears after 24 h.', noteCrossedToast: 'Crossed out — disappears in 24 h', noteRestoredToast: 'Restored' });
 Object.assign(MM_I18N.ar, { noteCross: 'اشطبها (تمت)', noteUncross: 'استعادة', noteGoneIn: 'تختفي بعد {x}', noteCrossHint: 'اضغط ○ أو اسحب الملاحظة جانباً لشطبها — تختفي بعد 24 ساعة.', noteCrossedToast: 'شُطبت — تختفي بعد 24 ساعة', noteRestoredToast: 'استُعيدت' });
 Object.assign(MM_I18N.sv, { noteCross: 'Stryk över (klar)', noteUncross: 'Återställ', noteGoneIn: 'försvinner om {x}', noteCrossHint: 'Tryck på ○ eller svep en lapp åt sidan för att stryka den — den försvinner efter 24 h.', noteCrossedToast: 'Överstruken — försvinner om 24 h', noteRestoredToast: 'Återställd' });
+/* v4.5 — strictly sequential course revision (one whole course at a time) */
+Object.assign(MM_I18N.en, {
+  activeSubject: 'Current course', nowCourse: 'Now', nextCourse: 'Next', topicOf: 'topic {n}/{m}', courseOrder: 'Course order',
+  courseOrderHint: 'One whole course at a time, never mixed: all MATH → PHYS → the rest of KFUPM by year → “Later / if time” → KTH MSc. A study block holds one course only. Change a priority to move a course in or out.',
+  priorityHint: 'Set the priority per course — the plan updates right away. “Ignore” is never scheduled; “Quick pass” gets half the time per topic.',
+  interleaveNote: 'Revision goes course by course in the order above.'
+});
+Object.assign(MM_I18N.ar, {
+  activeSubject: 'المقرر الحالي', nowCourse: 'الآن', nextCourse: 'التالي', topicOf: 'الموضوع {n}/{m}', courseOrder: 'ترتيب المقررات',
+  courseOrderHint: 'مقرر كامل في كل مرة دون خلط: كل الرياضيات ← الفيزياء ← بقية مقررات KFUPM حسب السنة ← «لاحقاً / إن وُجد وقت» ← ماجستير KTH. كل جلسة دراسة لمقرر واحد فقط. غيّر الأولوية لإدخال مقرر أو إخراجه.',
+  priorityHint: 'حدّد أولوية كل مقرر — تتحدث الخطة فوراً. «تجاهل» لا يُجدول أبداً، و«مراجعة سريعة» تأخذ نصف الوقت لكل موضوع.',
+  interleaveNote: 'تسير المراجعة مقرراً تلو الآخر بالترتيب أعلاه.'
+});
+Object.assign(MM_I18N.sv, {
+  activeSubject: 'Aktuell kurs', nowCourse: 'Nu', nextCourse: 'Nästa', topicOf: 'avsnitt {n}/{m}', courseOrder: 'Kursordning',
+  courseOrderHint: 'En hel kurs i taget, aldrig blandat: all MATH → PHYS → resten av KFUPM per årskurs → ”Senare / om tid finns” → KTH. Ett studiepass innehåller bara en kurs. Ändra prioritet för att ta med eller ta bort en kurs.',
+  priorityHint: 'Välj prioritet per kurs — planen uppdateras direkt. ”Hoppa över” schemaläggs aldrig; ”Snabb genomgång” får halva tiden per avsnitt.',
+  interleaveNote: 'Repetitionen går kurs för kurs i ordningen ovan.'
+});

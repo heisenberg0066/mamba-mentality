@@ -1,4 +1,4 @@
-const VERSION = '4.4.0';
+const VERSION = '4.5.0';
 const CACHE = 'mamba-v' + VERSION;
 const ASSETS = [
   './',

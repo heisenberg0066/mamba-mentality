@@ -79,11 +79,35 @@ function openChapterSheet(id) {
   });
 }
 
+/** 'Now: MATH 101 — topic 3/8 · Next: MATH 102' (v4.5). */
+function courseNowNextHtml() {
+  const nn = courseNowNext(); if (!nn) return esc(t('allCoursesDone'));
+  return `<span class="nn-now">▶ ${esc(t('nowCourse'))}: <b><bdi>${esc(nn.now.code)}</bdi></b> — ${esc(t('topicOf').replace('{n}', nn.topicNo).replace('{m}', nn.topicCount))}</span>`
+    + (nn.next ? ` <span class="nn-sep">·</span> <span class="nn-next">${esc(t('nextCourse'))}: <b><bdi>${esc(nn.next.code)}</bdi></b></span>` : '');
+}
+/** Numbered list of the whole course order: ✓ done · ▶ now · then the rest. */
+function courseOrderCard(ac) {
+  const order = mmCourseOrder(MM.state.courses); if (!order.length) return '';
+  let lastKey = '';
+  const rows = order.map((c, i) => {
+    const left = courseLeft(c); const st = !left ? 'done' : ac && ac.code === c.code ? 'now' : 'todo';
+    const key = mmCourseGroup(c) + (c.priority === 'later' ? '-later' : '');
+    const head = key !== lastKey ? `<li class="co-head">${esc(t('group_' + mmCourseGroup(c)))}${c.priority === 'later' ? ' · ' + esc(t('priorityLater')) : ''}</li>` : '';
+    lastKey = key;
+    return `${head}<li class="co-row ${st}"><span class="co-n">${i + 1}</span><span class="co-ic">${st === 'done' ? '✓' : st === 'now' ? '▶' : '○'}</span>
+      <button class="co-btn" data-course="${esc(c.code)}"><b><bdi>${esc(c.code)}</bdi></b> <span class="muted">${esc(c.title)}</span></button>
+      <span class="co-meta muted small"><bdi dir="ltr">${c.topics.length - left}/${c.topics.length}</bdi>${c.priority === 'quick' ? ' · ⚡' : ''}</span></li>`;
+  }).join('');
+  const done = order.filter((c) => !courseLeft(c)).length;
+  return `<div class="card"><details class="course-order" ${MM.state.settings.courseOrderOpen ? 'open' : ''}><summary><b>${esc(t('courseOrder'))}</b> <span class="muted">· ${done}/${order.length}</span></summary>
+    <p class="muted small">${esc(t('courseOrderHint'))}</p><ol class="co-list">${rows}</ol></details></div>`;
+}
 function renderStudy(root) {
   const ac = activeCourse(); const nextTp = ac ? ac.topics.find((x) => !x.done) : null;
   let h = '';
   if (ac) {
     h += `<div class="card recap"><div class="muted small">${esc(t('activeSubject'))}</div>
+      <div class="now-next">${courseNowNextHtml()}</div>
       <h2 style="margin:4px 0">${esc(ac.code)} — ${esc(ac.title)}</h2>
       <div class="progress" style="margin:8px 0"><span style="width:${coursePct(ac)}%"></span></div>
       <div class="muted">${ac.topics.length - courseLeft(ac)}/${ac.topics.length}${ac.deadline ? ' · ' + esc(t('deadline')) + ' ' + ac.deadline : ''}${coursePace(ac) ? ' · ' + coursePace(ac) + ' ' + esc(t('pacePerWeek')) : ''}</div>
@@ -98,6 +122,7 @@ function renderStudy(root) {
         <div class="progress thin" style="margin-top:8px"><span style="width:${coursePct(c)}%"></span></div>
         <div class="muted small" style="margin-top:4px">${c.topics.length - courseLeft(c)}/${c.topics.length} · ${c.hours || 0} h${c.deadline && mmIsScheduled(c) ? ' · ⏱ ' + c.deadline : ''}${coursePace(c) && courseLeft(c) && mmIsScheduled(c) ? ' · ' + coursePace(c) + ' ' + esc(t('pacePerWeek')) : ''}</div></button>
       <select class="prio-sel" data-prio="${esc(c.code)}" aria-label="${esc(t('coursePriority'))} ${esc(c.code)}">${prioOpts(c)}</select></div>`;
+  h += courseOrderCard(ac);
   h += `<p class="muted small" style="margin:0 4px 10px">${esc(t('priorityHint'))} ${esc(t('interleaveNote'))}</p>`;
   MM_GROUPS.forEach((g) => {
     const gl = MM.state.courses.filter((c) => mmCourseGroup(c) === g); if (!gl.length) return;
@@ -125,6 +150,7 @@ function renderStudy(root) {
       <button class="btn primary" id="sw-log">${esc(t('addLog'))}</button></div>
     <div style="margin-top:12px">${sw.logs.length ? sw.logs.slice().reverse().slice(0, 20).map((l) => `<div class="list-item"><div><b>${esc(l.date)}</b><div class="muted">${esc(l.note || '')}${l.idea ? ' · 💡 ' + esc(l.idea) : ''}</div></div></div>`).join('') : `<p class="muted">${esc(t('empty'))}</p>`}</div></div>`;
   root.innerHTML = h;
+  const co = $('.course-order', root); if (co) co.ontoggle = () => { MM.state.settings.courseOrderOpen = co.open; persist(); };
   const td = $('#tp-done', root); if (td) td.onclick = () => { completeTopic(ac, td.dataset.tp); render(); };
   $$('[data-course]', root).forEach((b) => { b.onclick = () => openCourseSheet(b.dataset.course); });
   $('#add-course-btn', root).onclick = () => openCourseSheet(null);
@@ -160,7 +186,6 @@ function openCourseSheet(code) {
     <div class="field-label">${esc(t('topics'))}</div><div id="cs-topics">${topicsHtml()}</div>
     <label class="field">${esc(t('notes'))}<textarea id="cs-notes">${esc(c.notes || '')}</textarea></label>
     <label class="field">${esc(t('link'))}<input id="cs-links" value="${esc(c.links || '')}" placeholder="https://"></label>
-    ${existing ? `<button class="btn block" id="cs-active">⭐ ${esc(t('setActive'))}</button>` : ''}
     <button class="btn primary block" id="cs-save">${esc(t('save'))}</button>
     ${existing ? `<button class="btn danger block" id="cs-del">${esc(t('delete'))}</button>` : ''}</div>`, (root, close) => {
     const wire = () => {
@@ -184,7 +209,6 @@ function openCourseSheet(code) {
       }
       persist(); close(); render();
     };
-    const a = $('#cs-active', root); if (a) a.onclick = () => { read(); Object.assign(existing, c); MM.state.settings.activeCourse = c.code; persist(); close(); toast(`${t('activeSubject')}: ${c.code}`); render(); };
     const d = $('#cs-del', root); if (d) d.onclick = () => { if (confirm(t('confirmDelete'))) { MM.state.courses = MM.state.courses.filter((x) => x.code !== code); persist(); close(); render(); } };
   });
 }

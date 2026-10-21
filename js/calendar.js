@@ -230,7 +230,7 @@ function renderToday(root) {
     const due = MM.state.missedQueue.filter((q) => q.rescheduleDate === today && !q.status).length;
     const n = day.blocks.filter((b) => FOCUS_TYPES.includes(b.type)).length;
     recap = `<div class="card recap compact-recap"><div class="row between"><b>☀️ ${esc(t('morningRecap'))}</b><button class="btn sm ghost" data-action="dismiss-recap" aria-label="${esc(t('dismiss'))}">✕</button></div>
-      <div class="muted small">${n} × ${esc(t('type_deep'))}${ch ? ' · 🇸🇪 ' + esc(ch.book + ' ' + ch.num) : ''}${ac ? ' · 📚 ' + esc(ac.code) : ''}${due ? ' · ↻ ' + due : ''}</div></div>`;
+      <div class="muted small">${n} × ${esc(t('type_deep'))}${ch ? ' · 🇸🇪 ' + esc(ch.book + ' ' + ch.num) : ''}${due ? ' · ↻ ' + due : ''}</div>${ac ? `<div class="muted small now-next">📚 ${courseNowNextHtml()}</div>` : ''}</div>`;
   }
   const views = { day: renderDayView, week: renderWeekView, month: renderMonthView, list: renderListView };
   root.innerHTML = recap + planBanner() + calToolbar() + (views[MM.view] || renderDayView)(MM.date);

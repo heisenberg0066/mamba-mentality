@@ -1,4 +1,4 @@
-# Mamba Mentality (v4.4)
+# Mamba Mentality (v4.5)
 
 Offline-first PWA planner. Open `index.html` over HTTPS (or local server), then on iPhone: Safari → Share → **Add to Home Screen**.
 
@@ -38,6 +38,13 @@ is kept in localStorage under `mamba-mentality-v1-backup-v3`).
   plan from now, with Undo.
 - Data: state v5 (`progress`, `dayDrops`, appointment `repeat` / `skip` / `overrides`, task `skipDays` / `notBefore` / `commute`);
   an untouched copy of v4 data is kept under `mamba-mentality-v1-backup-v4`.
+
+## v4.5 — one whole course at a time
+- Revision is strictly sequential, never interleaved: all MATH (101 → 102 → 201 → 202 → 333) → PHYS 101 → 102 → the rest of KFUPM by study year (course number level), then number → KFUPM “Later / if time” → KTH MSc (Must/want, then Quick pass, then Later, each by course code). “Ignore” is never scheduled.
+- A study block holds one course only. If a course ends inside a block, that block stops at the course end and the next course starts in the next block. Recording more than planned carries on into the next course, because that is what you really did.
+- Quick pass topics take half the time of a full topic, and the course keeps its year position.
+- Study tab: “▶ Now: MATH 101 — topic 3/8 · Next: MATH 102” and a numbered **Course order** list (✓ done · ▶ now). Today's recap shows the same line.
+- Data v6: done topics and partial progress are kept. Course deadlines are re-planned once along the new order, and the old data is kept as `mamba-mentality-v1-backup-v5`.
 
 ## v4.4 — cross out notes
 - Tap the round ○ on a sticky note (or swipe it sideways, or use **✓ Cross out** in the note sheet) to cross it out. It stays struck through and dimmed, with a "⏳ disappears in Xh" hint.

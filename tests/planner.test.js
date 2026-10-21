@@ -242,30 +242,34 @@ const KTH_IGNORE = ['AK2030', 'SA2002'];
 const revCodes = (app, from, n) => dates(from, n).flatMap((ds) => day(app, ds).blocks
   .filter((b) => b.type === 'revision' || b.type === 'deep').map((b) => (b.meta.detail || '').split(' — ')[0]));
 
-test('KTH courses appear in revision blocks, interleaved with KFUPM, from the plan start (no overlaps)', () => {
+test('KTH courses are scheduled only after the whole KFUPM run (no interleaving), from the plan start (no overlaps)', () => {
   const app = loadApp();
   const kth = run(app, "MM.state.courses.filter((c) => c.group === 'kth').map((c) => c.code + ':' + c.priority)");
   assert.deepStrictEqual(Array.from(kth), [...KTH_HIGH.map((c) => c + ':high'), ...KTH_QUICK.map((c) => c + ':quick'), ...KTH_IGNORE.map((c) => c + ':ignore')]);
   const codes = revCodes(app, '2026-10-21', 14);
-  assert.ok(codes.some((c) => KTH_HIGH.includes(c)), 'a KTH course is in a revision block within 2 weeks');
-  assert.ok(codes.some((c) => /^(MATH|PHYS|ME) /.test(c)), 'KFUPM revision continues too');
-  assert.ok(day(app, '2026-10-23').blocks.some((b) => b.type === 'revision' && /^SE1025 — /.test(b.meta.detail)));
-  // the interleaved sequence alternates groups while both have topics left
-  const seq = run(app, "revisionSequence().slice(0, 10).map((x) => x.course.group)");
-  assert.deepStrictEqual(Array.from(seq), ['kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth', 'kfupm', 'kth']);
+  assert.ok(codes.length && codes.every((c) => /^MATH 10[12]$/.test(c)), 'the first two weeks are MATH 101 → MATH 102 only: ' + [...new Set(codes)]);
+  assert.ok(day(app, '2026-10-23').blocks.some((b) => b.type === 'revision' && /^MATH 101 — /.test(b.meta.detail)));
+  // groups never alternate: all KFUPM first, then all KTH
+  const groups = Array.from(run(app, 'revisionSequence().map((x) => x.course.group)'));
+  const firstKth = groups.indexOf('kth');
+  assert.ok(firstKth > 0 && groups.slice(firstKth).every((g) => g === 'kth') && groups.slice(0, firstKth).every((g) => g === 'kfupm'));
   assert.strictEqual(day(app, '2026-10-20').blocks.length, 0, 'still nothing before the plan start');
   dates('2026-10-21', 14).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
 });
-test('KTH priorities: ignore / later never scheduled; changing priority in the app reschedules', () => {
+test('priorities: ignore never scheduled; later after the main run of its group; changing priority in the app reorders', () => {
   const app = loadApp();
+  const order = () => Array.from(run(app, 'mmCourseOrder(MM.state.courses).map((c) => c.code)'));
   const all = () => new Set(Array.from(run(app, 'revisionSequence().map((x) => x.course.code)')));
   KTH_IGNORE.forEach((c) => assert.ok(!all().has(c)));
   [...KTH_HIGH, ...KTH_QUICK].forEach((c) => assert.ok(all().has(c), c + ' is scheduled'));
+  const o = order(); const later = ['CHEM 101', 'EE 306', 'ME 322', 'AE 449', 'ME 451', 'AE 454', 'CISE 482', 'CISE 483'];
+  assert.deepStrictEqual(o.slice(22, 30), later, 'KFUPM later/if-time right after the KFUPM main run, before KTH');
   run(app, "setCoursePriority('SE1025', 'ignore'); setCoursePriority('AK2030', 'high');");
   assert.ok(!all().has('SE1025')); assert.ok(all().has('AK2030'));
+  assert.strictEqual(order()[30], 'AK2030', 'KTH high courses by code');
   assert.ok(!revCodes(app, '2026-10-21', 21).includes('SE1025'));
   run(app, "setCoursePriority('SE2137', 'later');");
-  assert.ok(!all().has('SE2137'));
+  assert.strictEqual(order().slice(-1)[0], 'SE2137', 'a KTH later course goes after KTH quick');
   assert.strictEqual(run(app, "MM.state.courses.find((c) => c.code === 'SE2137').priority"), 'later');
 });
 test('migration v3 → v4: KTH group added once, KFUPM courses + progress + other data untouched', () => {
@@ -375,7 +379,7 @@ test('migration v4 → v5: progress + day drops added, repeat fields normalised,
     __v4.courses[0].topics[0].done = true; localStorage.setItem(MM_STORAGE_KEY, JSON.stringify(__v4)); MM.state = mmLoad();`);
   assert.strictEqual(app.store['mamba-mentality-v1-backup-v4'], JSON.stringify(run(app, '__v4')));
   const s = JSON.parse(app.store['mamba-mentality-v1']);
-  assert.strictEqual(s.version, 5);
+  assert.strictEqual(s.version, run(app, 'MM_VERSION'));
   assert.deepStrictEqual(s.progress, []); assert.deepStrictEqual(s.dayDrops, {});
   assert.strictEqual(s.items[0].repeat.mode, 'none'); assert.deepStrictEqual(s.items[1].skipDays, []);
   assert.strictEqual(s.courses[0].topics[0].done, true);
@@ -581,4 +585,96 @@ test('notes: cross out stamps doneAt, still there at 23h59, gone after 24h; uncr
   const s = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__old)))');
   assert.strictEqual(s.notes.length, 2); assert.strictEqual(s.notes[0].done, false); assert.strictEqual(s.notes[0].doneAt, null);
   assert.ok(s.notes[1].doneAt);
+});
+
+// ---------- v4.5: strictly sequential course revision ----------
+const ORDER_25 = ['MATH 101', 'MATH 102', 'MATH 201', 'MATH 202', 'MATH 333', 'PHYS 101', 'PHYS 102',
+  'CE 201', 'ME 201', 'CE 203', 'ME 203', 'EE 204', 'ME 204', 'ME 210', 'ME 216',
+  'ME 307', 'ME 308', 'ME 309', 'ME 311', 'ME 315', 'ME 316', 'ME 413',
+  'CHEM 101', 'EE 306', 'ME 322'];
+const KTH_ORDER = ['MF2019', 'SD2150', 'SD2420', 'SE1025', 'SE2126', 'SE2132', 'SE2137', 'SE2139', 'SE2860', 'MG2033', 'SE202X', 'SE2123', 'SG2211'];
+test('course order: all MATH → PHYS → rest of KFUPM by year → KFUPM later → KTH high → KTH quick; ignore excluded', () => {
+  const app = loadApp();
+  const o = Array.from(run(app, 'mmCourseOrder(MM.state.courses).map((c) => c.code)'));
+  assert.deepStrictEqual(o.slice(0, 25), ORDER_25);
+  assert.deepStrictEqual(o.slice(-13), KTH_ORDER);
+  assert.strictEqual(o.length, 30 + 13);
+  KTH_IGNORE.forEach((c) => assert.ok(!o.includes(c)));
+  assert.strictEqual(run(app, "MM.state.courses.find((c) => c.code === 'ME 216').priority"), 'high', 'ME 216 stays KEEP');
+  // the topic sequence follows the course order, each course as one contiguous run
+  const seq = Array.from(run(app, 'revisionSequence().map((x) => x.course.code)'));
+  const runs = seq.filter((c, i) => c !== seq[i - 1]);
+  assert.deepStrictEqual(runs, o, 'no course appears twice = never interleaved');
+  const nn = run(app, 'courseNowNext()');
+  assert.strictEqual(nn.now.code, 'MATH 101'); assert.strictEqual(nn.topicNo, 1); assert.strictEqual(nn.next.code, 'MATH 102');
+  // quick pass topics take half the time
+  assert.strictEqual(run(app, "streamQueue('rev').find((x) => x.course.code === 'CE 201').w"), 0.5);
+  assert.strictEqual(run(app, "streamQueue('rev').find((x) => x.course.code === 'ME 201').w"), 1);
+});
+test('no interleaving inside a block: every study block holds one course; a course ending mid-block → next course starts next block', () => {
+  const app = loadApp();
+  const blocks = dates('2026-10-21', 60).flatMap((ds) => studyOn(app, ds).filter((b) => b.meta.units > 0).map((b) => ({ ds, b })));
+  app.__bl = blocks.map((x) => [x.ds, x.b.id, x.b.meta]);
+  const spans = Array.from(run(app, `__bl.map(([ds, id, meta]) => { const u = blockUnits(ds, { type: 'revision', id, meta }); const q = streamQueue('rev');
+    const a = queueAt(q, u.pos); const z = queueAt(q, u.pos + u.time - 1e-6); return [a ? a.x.course.code : null, z ? z.x.course.code : null]; })`));
+  assert.ok(spans.length > 40);
+  spans.forEach(([a, z], i) => assert.strictEqual(z, a, `block ${i} mixes ${a} and ${z}`));
+  const codes = spans.map((x) => x[0]); const runs = codes.filter((c, i) => c !== codes[i - 1]);
+  assert.deepStrictEqual(runs, ORDER_25.slice(0, runs.length), 'courses come one after another in order');
+  assert.ok(runs.length >= 3, 'two months cover several courses: ' + runs);
+  // the block where MATH 101 ends is cut at the course end; the next block starts MATH 102 at its first topic
+  const iLast = codes.lastIndexOf('MATH 101'); const nb = blocks[iLast + 1].b;
+  assert.match(nb.meta.detail, /^MATH 102 — /); assert.strictEqual(nb.meta.unitInto, 0);
+  dates('2026-10-21', 60).forEach((ds) => assert.deepStrictEqual(overlaps(day(app, ds).blocks), []));
+});
+test('overshoot across a course end continues into the next course; undo restores; Now/Next follow', () => {
+  const app = loadApp();
+  run(app, "MM.state.courses.find((c) => c.code === 'MATH 101').topics.slice(0, 7).forEach((t) => { t.done = true; }); MM.rev++;");
+  const b = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  assert.match(b.meta.detail, /^MATH 101 — /);
+  assert.ok(b.meta.units <= 1 + 1e-9, 'the block is capped at the end of MATH 101');
+  const seq0 = seqLabels(app);
+  app.__b = b; run(app, "recordProgress('2026-10-21', __b, 2.5)");
+  const m101 = run(app, "MM.state.courses.find((c) => c.code === 'MATH 101')");
+  const m102 = run(app, "MM.state.courses.find((c) => c.code === 'MATH 102')");
+  assert.ok(m101.topics.every((t) => t.done), 'MATH 101 finished');
+  assert.strictEqual(m102.topics[0].done, true); assert.strictEqual(m102.topics[1].part, 0.5);
+  const nn = run(app, 'courseNowNext()');
+  assert.strictEqual(nn.now.code, 'MATH 102'); assert.strictEqual(nn.topicNo, 2); assert.strictEqual(nn.next.code, 'MATH 201');
+  assert.strictEqual(run(app, 'activeCourse().code'), 'MATH 102');
+  const nxt = studyOn(app, '2026-10-21').find((x) => x.id === 'revision2');
+  assert.match(nxt.meta.detail, /^MATH 102 — /); assert.strictEqual(nxt.meta.unitInto, 0.5);
+  app.__b2 = studyOn(app, '2026-10-21').find((x) => x.id === 'revision');
+  run(app, "setStatus('2026-10-21', __b2, 'done')");
+  assert.deepStrictEqual(seqLabels(app), seq0, 'undo puts everything back');
+  assert.strictEqual(run(app, 'courseNowNext().now.code'), 'MATH 101');
+});
+test('migration v5 → v6: done topics / courses + partial progress preserved, sequence starts at the first unfinished topic, backup kept', () => {
+  const app = loadApp();
+  run(app, `__v5 = mmDefaultState(); __v5.version = 5; __v5.settings.activeCourse = 'SE1025';
+    const c = (k) => __v5.courses.find((x) => x.code === k);
+    c('MATH 101').topics.slice(0, 3).forEach((t) => { t.done = true; t.doneDate = '2026-10-20'; });
+    c('PHYS 101').topics.forEach((t) => { t.done = true; });
+    c('SE1025').topics[0].done = true; c('SE1025').topics[2].part = 0.5;
+    __v5.progress = [{ id: 'pg1', ds: '2026-10-20', blockId: 'revision', baseId: 'revision', homeDs: '2026-10-20', stream: 'rev', planned: 0.3, actual: 0.5, from: 'x', undo: [] }];
+    c('ME 216').deadline = '2026-11-01';
+    localStorage.setItem(MM_STORAGE_KEY, JSON.stringify(__v5)); MM.state = mmLoad(); MM.rev++;`);
+  assert.strictEqual(app.store['mamba-mentality-v1-backup-v5'], JSON.stringify(run(app, '__v5')));
+  const s = JSON.parse(app.store['mamba-mentality-v1']);
+  assert.strictEqual(s.version, run(app, 'MM_VERSION'));
+  const c = (k) => s.courses.find((x) => x.code === k);
+  assert.deepStrictEqual(c('MATH 101').topics.map((t) => !!t.done), [true, true, true, false, false, false, false, false]);
+  assert.strictEqual(c('MATH 101').topics[0].doneDate, '2026-10-20');
+  assert.ok(c('PHYS 101').topics.every((t) => t.done));
+  assert.strictEqual(c('SE1025').topics[0].done, true); assert.strictEqual(c('SE1025').topics[2].part, 0.5);
+  assert.strictEqual(s.progress.length, 1);
+  assert.strictEqual(s.settings.activeCourse, 'MATH 101', 'the order decides the current course');
+  assert.ok(c('ME 216').deadline > '2027-01-01', 'deadlines re-planned along the new order');
+  const seq = Array.from(run(app, "revisionSequence().map((x) => x.course.code + ' — ' + x.topic.name)"));
+  assert.strictEqual(seq[0], 'MATH 101 — ' + c('MATH 101').topics[3].name);
+  assert.ok(!seq.some((x) => x.startsWith('PHYS 101')), 'finished course skipped');
+  const kth = seq.filter((x) => x.startsWith('SE1025'));
+  assert.strictEqual(kth[0], 'SE1025 — ' + c('SE1025').topics[2].name, 'a started topic is first inside its course');
+  assert.strictEqual(run(app, 'courseNowNext().topicNo'), 4);
+  assert.match(studyOn(app, '2026-10-23')[0].meta.detail, /^MATH 101 — /);
 });
