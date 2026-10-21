@@ -315,3 +315,7 @@ Object.assign(MM_I18N.sv, {
   fixSwapDropped: 'stryks den dagen', fixSwapRoutine: 'Gör ”{x}” i stället för ”{y}”', moreToSort: 'till att ta ställning till', fixDrop: 'Stryk ”{x}”', fixDropRoutine: 'Hoppa över ”{x}” den här gången',
   dropThis: 'Stryk', dropSelected: 'Stryk valda & planera om', droppedN: '{n} strukna', keptDropped: 'OK — hoppar över den här gången', allChanges: 'Alla ändringar'
 });
+/* v4.4 — cross out notes */
+Object.assign(MM_I18N.en, { noteCross: 'Cross out (done)', noteUncross: 'Restore', noteGoneIn: 'disappears in {x}', noteCrossHint: 'Tap ○ or swipe a note sideways to cross it out — it disappears after 24 h.', noteCrossedToast: 'Crossed out — disappears in 24 h', noteRestoredToast: 'Restored' });
+Object.assign(MM_I18N.ar, { noteCross: 'اشطبها (تمت)', noteUncross: 'استعادة', noteGoneIn: 'تختفي بعد {x}', noteCrossHint: 'اضغط ○ أو اسحب الملاحظة جانباً لشطبها — تختفي بعد 24 ساعة.', noteCrossedToast: 'شُطبت — تختفي بعد 24 ساعة', noteRestoredToast: 'استُعيدت' });
+Object.assign(MM_I18N.sv, { noteCross: 'Stryk över (klar)', noteUncross: 'Återställ', noteGoneIn: 'försvinner om {x}', noteCrossHint: 'Tryck på ○ eller svep en lapp åt sidan för att stryka den — den försvinner efter 24 h.', noteCrossedToast: 'Överstruken — försvinner om 24 h', noteRestoredToast: 'Återställd' });

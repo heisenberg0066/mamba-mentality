@@ -239,8 +239,9 @@ function render() {
   const root = $('#panel-' + MM.tab); if (!root) return;
   ({ today: renderToday, free: renderFree, swedish: renderSwedish, study: renderStudy, money: renderMoney, goals: renderGoals, notes: renderNotes, more: renderMore }[MM.tab] || renderToday)(root);
 }
+function notesSweep() { if (typeof purgeExpiredNotes === 'function' && purgeExpiredNotes() && MM.tab === 'notes' && !$('.modal-backdrop')) render(); }
 function init() {
-  MM.state = mmLoad(); persist();
+  MM.state = mmLoad(); purgeExpiredNotes(); persist();
   window.MM = MM; MM.date = mmTodayStr(); MM.view = MM.state.settings.calView || 'day';
   const p = new URLSearchParams(location.search);
   if (p.get('tab')) MM.tab = p.get('tab');
@@ -251,7 +252,11 @@ function init() {
   $$('nav.tabs button').forEach((btn) => { btn.onclick = () => { MM.tab = btn.dataset.tab; render(); window.scrollTo(0, 0); }; });
   render();
   if (p.get('open')) openBlockSheet(MM.date, p.get('open'));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') notesSweep(); });
+  window.addEventListener('focus', notesSweep);
   setInterval(() => {
+    notesSweep();
+    if (MM.tab === 'notes' && !$('.modal-backdrop')) $$('[data-note]').forEach((el) => { const n = notesList().find((x) => x.id === el.dataset.note); const g = $('.gone-in', el); if (n && g) g.textContent = '⏳ ' + goneInText(n); });
     if (MM.tab === 'today' && !$('.modal-backdrop')) { const sc = $('#cal-scroll'); const top = sc ? sc.scrollTop : 0; render(); const sc2 = $('#cal-scroll'); if (sc2) sc2.scrollTop = top; }
     else $('#header-meta').innerHTML = `<strong>${mmNowHM()}</strong><br>${mmTodayStr()}`;
   }, 60000);

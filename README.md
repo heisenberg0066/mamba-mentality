@@ -1,4 +1,4 @@
-# Mamba Mentality (v4.3)
+# Mamba Mentality (v4.4)
 
 Offline-first PWA planner. Open `index.html` over HTTPS (or local server), then on iPhone: Safari → Share → **Add to Home Screen**.
 
@@ -38,6 +38,11 @@ is kept in localStorage under `mamba-mentality-v1-backup-v3`).
   plan from now, with Undo.
 - Data: state v5 (`progress`, `dayDrops`, appointment `repeat` / `skip` / `overrides`, task `skipDays` / `notBefore` / `commute`);
   an untouched copy of v4 data is kept under `mamba-mentality-v1-backup-v4`.
+
+## v4.4 — cross out notes
+- Tap the round ○ on a sticky note (or swipe it sideways, or use **✓ Cross out** in the note sheet) to cross it out. It stays struck through and dimmed, with a "⏳ disappears in Xh" hint.
+- 24 hours after being crossed out it is removed automatically. This is checked on load, when the app regains focus or becomes visible, and every minute while it is open.
+- Un-crossing (↺ Restore) within 24 h cancels the removal. Notes store `done` and `doneAt`, and older notes are normalized on load.
 
 ## Plan start date
 More → Plan → *Plan start date* (default 2026-10-21). Nothing is generated before it; your own appointments still show.

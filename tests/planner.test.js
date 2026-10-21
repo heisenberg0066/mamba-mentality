@@ -547,3 +547,38 @@ test('random v4.3 scenarios: repeating appointments, commute tasks, moved/skippe
     items.filter((x) => x.kind === 'task').forEach((it) => { const inf = p.tasks[it.id]; assert.ok(inf.placed <= it.effort); if (inf.placed < it.effort) assert.ok(p.warnings.some((w) => w.t === 'overflow' && w.item === it.id)); });
   }
 });
+
+// ---------- v4.4: crossed-out notes disappear after 24 h ----------
+test('notes: cross out stamps doneAt, still there at 23h59, gone after 24h; uncross cancels; survives reload + migration', () => {
+  const app = loadApp();
+  run(app, "addNote('Buy milk'); addNote('Call Migrationsverket');");
+  const [a, b] = Array.from(run(app, 'MM.state.notes.map((n) => n.id)'));
+  const T0 = Date.parse('2026-10-21T10:00:00Z'); app.__T0 = T0; app.__a = a; app.__b = b;
+  const n = run(app, 'toggleNoteDone(__a, __T0)');
+  assert.strictEqual(n.done, true); assert.strictEqual(n.doneAt, '2026-10-21T10:00:00.000Z');
+  // persisted, and still crossed out after a reload (migration keeps done + doneAt)
+  run(app, 'MM.state = mmLoad();');
+  assert.strictEqual(run(app, "MM.state.notes.find((x) => x.id === __a).doneAt"), '2026-10-21T10:00:00.000Z');
+  const H = 3600000;
+  assert.strictEqual(run(app, `purgeExpiredNotes(__T0 + ${24 * H - 60000})`), 0, 'nothing removed at 23:59');
+  assert.strictEqual(run(app, 'MM.state.notes.length'), 2);
+  assert.strictEqual(run(app, `noteLeftMs(MM.state.notes.find((x) => x.id === __a), __T0 + ${23 * H})`), H);
+  assert.strictEqual(run(app, `purgeExpiredNotes(__T0 + ${24 * H})`), 1, 'gone at 24 h');
+  assert.deepStrictEqual(Array.from(run(app, 'MM.state.notes.map((x) => x.id)')), [b], 'the other note is untouched');
+  assert.ok(!JSON.parse(app.store['mamba-mentality-v1']).notes.some((x) => x.id === a), 'removal is saved');
+  // un-crossing within 24 h restores it and cancels the removal
+  run(app, `toggleNoteDone(__b, __T0); toggleNoteDone(__b, __T0 + ${5 * H});`);
+  const nb = run(app, 'MM.state.notes.find((x) => x.id === __b)');
+  assert.strictEqual(nb.done, false); assert.strictEqual(nb.doneAt, null);
+  assert.strictEqual(run(app, `purgeExpiredNotes(__T0 + ${72 * H})`), 0);
+  assert.strictEqual(run(app, 'MM.state.notes.length'), 1);
+  // crossing out again starts a fresh 24 h
+  run(app, `toggleNoteDone(__b, __T0 + ${80 * H})`);
+  assert.strictEqual(run(app, `purgeExpiredNotes(__T0 + ${103 * H})`), 0);
+  assert.strictEqual(run(app, `purgeExpiredNotes(__T0 + ${104 * H})`), 1);
+  // old data: notes without the new fields stay; a 'done' note with no timestamp gets a fresh 24 h
+  app.__old = { version: 5, settings: {}, notes: [{ id: 'o1', text: 'old' }, { id: 'o2', text: 'x', done: true }] };
+  const s = run(app, 'mmMigrate(JSON.parse(JSON.stringify(__old)))');
+  assert.strictEqual(s.notes.length, 2); assert.strictEqual(s.notes[0].done, false); assert.strictEqual(s.notes[0].doneAt, null);
+  assert.ok(s.notes[1].doneAt);
+});

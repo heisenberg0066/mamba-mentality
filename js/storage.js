@@ -1,4 +1,4 @@
-const MM_APP_VERSION = '4.3.0';
+const MM_APP_VERSION = '4.4.0';
 const MM_STORAGE_KEY = 'mamba-mentality-v1'; // same key: v2 migrates in place
 const MM_VERSION = 5; // v3: planner items (appointments/tasks), plan start date · v4: KTH MSc course group, 'ignore' priority
                       // v5: real study progress (partial units, progress log), repeating appointments, per-day drops
@@ -137,7 +137,8 @@ function mmMigrate(parsed) {
   s.days = parsed.days || {};
   s.jobApps = parsed.jobApps || {};
   s.goalsMeta = parsed.goalsMeta || {};
-  s.notes = Array.isArray(parsed.notes) ? parsed.notes : [];
+  s.notes = Array.isArray(parsed.notes) ? parsed.notes.filter((n) => n && typeof n === 'object') : [];
+  s.notes.forEach((n) => { n.done = !!n.done; if (!n.done || !n.doneAt || isNaN(Date.parse(n.doneAt))) n.doneAt = n.done ? new Date().toISOString() : null; }); // v4.4: crossed-out notes
   // v3: planner items + plan start date
   s.items = Array.isArray(parsed.items) ? parsed.items.filter((x) => x && x.id && (x.kind === 'appt' || x.kind === 'task')) : [];
   s.items.forEach((x) => { if (x.kind === 'task' && !Array.isArray(x.log)) x.log = []; });

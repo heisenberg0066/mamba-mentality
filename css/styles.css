@@ -521,3 +521,11 @@ details.clash-sec[open] summary::after{content:' ▴'}
 .all-chg summary{cursor:pointer}
 .sum-actions{position:sticky;bottom:0;background:var(--card);padding-top:6px}
 .more-mv summary{margin-top:6px;cursor:pointer}
+/* ===== v4.4: crossed-out notes ===== */
+.note-check{position:absolute;top:6px;inset-inline-end:6px;width:40px;height:40px;border-radius:50%;border:2px solid rgba(51,48,31,.45);background:rgba(255,255,255,.35);color:#1d5c37;font-size:20px;font-weight:800;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2}
+.note-check.on{background:#3dba6f;border-color:#2d8c53;color:#fff}
+.sticky .note-text{padding-inline-end:30px}
+.sticky.done{opacity:.55;filter:saturate(.5)}
+.sticky.done .note-text{text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:rgba(51,48,31,.75)}
+.gone-in{font-weight:600;color:rgba(51,48,31,.8)}
+.notes-hint{margin:2px 6px 0}
